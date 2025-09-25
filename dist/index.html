@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EASYWAY Tutor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    }
+    
+    /* Theming Engine using CSS Variables */
+    :root, .theme-default {
+      --color-primary: 34 197 94; /* green-500 */
+      --color-primary-hover: 22 163 74; /* green-600 */
+      --color-accent: 34 211 238; /* cyan-400 */
+      --color-background-start: 15 23 42; /* slate-900 */
+      --color-background-end: 0 0 0; /* black */
+      --color-sidebar: 2 6 23; /* slate-950 */
+      --color-card: 15 23 42; /* slate-900 */
+      --color-border: 51 65 85; /* slate-700 */
+      --color-text-primary: 241 245 249; /* slate-100 */
+      --color-text-secondary: 148 163 184; /* slate-400 */
+      --color-input: 30 41 59; /* slate-800 */
+    }
+    .theme-solaris {
+      --color-primary: 234 88 12; /* orange-600 */
+      --color-primary-hover: 194 65 12; /* orange-700 */
+      --color-accent: 250 204 21; /* yellow-400 */
+      --color-background-start: 28 25 23; /* stone-900 */
+      --color-background-end: 12 10 9; /* stone-950 */
+      --color-sidebar: 12 10 9;
+      --color-card: 41 37 36; /* stone-800 */
+      --color-border: 68 64 60; /* stone-700 */
+      --color-text-primary: 245 245 244; /* stone-100 */
+      --color-text-secondary: 168 162 158; /* stone-400 */
+      --color-input: 68 64 60;
+    }
+    .theme-galaxy {
+        --color-primary: 139 92 246; /* violet-500 */
+        --color-primary-hover: 124 58 237; /* violet-600 */
+        --color-accent: 216 180 254; /* purple-300 */
+        --color-background-start: 26 23 43;
+        --color-background-end: 15 12 30;
+        --color-sidebar: 15 12 30;
+        --color-card: 37 33 64;
+        --color-border: 76 68 112;
+        --color-text-primary: 233 213 255; /* purple-100 */
+        --color-text-secondary: 196 181 253; /* purple-300 */
+        --color-input: 59 52 98;
+    }
+    .theme-midnight {
+        --color-primary: 59 130 246; /* blue-500 */
+        --color-primary-hover: 37 99 235; /* blue-600 */
+        --color-accent: 14 165 233; /* sky-500 */
+        --color-background-start: 23 23 23; /* neutral-900 */
+        --color-background-end: 24 24 38; /* dark blue */
+        --color-sidebar: 17 24 39; /* gray-900 */
+        --color-card: 31 41 55; /* gray-800 */
+        --color-border: 55 65 81; /* gray-700 */
+        --color-text-primary: 229 231 235; /* gray-200 */
+        --color-text-secondary: 156 163 175; /* gray-400 */
+        --color-input: 55 65 81;
+    }
+    .theme-crimson {
+        --color-primary: 220 38 38; /* red-600 */
+        --color-primary-hover: 185 28 28; /* red-700 */
+        --color-accent: 249 115 22; /* orange-400 */
+        --color-background-start: 19 19 19;
+        --color-background-end: 0 0 0;
+        --color-sidebar: 10 10 10;
+        --color-card: 28 28 28;
+        --color-border: 64 64 64;
+        --color-text-primary: 245 245 245; /* neutral-100 */
+        --color-text-secondary: 163 163 163; /* neutral-400 */
+        --color-input: 41 41 41;
+    }
+    .theme-forest {
+        --color-primary: 22 163 74; /* green-600 */
+        --color-primary-hover: 21 128 61; /* green-700 */
+        --color-accent: 163 230 53; /* lime-400 */
+        --color-background-start: 20 32 25;
+        --color-background-end: 10 15 12;
+        --color-sidebar: 15 23 20;
+        --color-card: 25 38 31;
+        --color-border: 44 64 53;
+        --color-text-primary: 220 252 231; /* green-100 */
+        --color-text-secondary: 187 247 208; /* green-200 */
+        --color-input: 30 52 41;
+    }
+    .theme-ivory {
+        --color-primary: 29 78 216; /* blue-700 */
+        --color-primary-hover: 30 64 175; /* blue-800 */
+        --color-accent: 219 39 119; /* pink-600 */
+        --color-background-start: 248 250 252; /* slate-50 */
+        --color-background-end: 226 232 240; /* slate-200 */
+        --color-sidebar: 255 255 255; /* white */
+        --color-card: 255 255 255; /* white */
+        --color-border: 203 213 225; /* slate-300 */
+        --color-text-primary: 15 23 42; /* slate-900 */
+        --color-text-secondary: 51 65 85; /* slate-700 */
+        --color-input: 241 245 249; /* slate-100 */
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgb(var(--color-background-end));
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgb(var(--color-border));
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569; /* slate-600 */
+    }
+
+    /* Noise Overlay */
+    .noise-overlay {
+      position: relative;
+    }
+    .noise-overlay::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      /* 1x1 transparent PNG */
+      background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=');
+      opacity: 0.05;
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    /* Animated Gradient Background */
+    @keyframes animated-gradient {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    .animated-gradient-bg {
+      background-size: 200% 200%;
+      animation: animated-gradient 3s ease infinite;
+    }
+
+    /* Custom scrollbar for Global Assistant */
+    .global-assistant-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .global-assistant-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .global-assistant-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(var(--color-border), 0.5);
+      border-radius: 3px;
+      transition: background 0.2s ease-in-out;
+    }
+    .global-assistant-scrollbar:hover::-webkit-scrollbar-thumb {
+      background: rgb(var(--color-border));
+    }
+
+  </style>
+
+  <script type="module" crossorigin src="/assets/index-CDCH3CEP.js"></script>
+</head>
+  <body class="bg-gradient-to-br from-[rgb(var(--color-background-start))] to-[rgb(var(--color-background-end))] noise-overlay">
+    <div id="root"></div>
+  </body>
+</html>
