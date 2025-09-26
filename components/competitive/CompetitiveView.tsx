@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { supabase, SUPABASE_ENABLED } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
 import Card from '../common/Card';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import UserResultsView from './UserResultsView';
 import { useI18n } from '../../contexts/I18nContext';
+import { track } from '../../services/analytics';
 
 interface QuizMeta {
   id: string;
@@ -21,6 +22,7 @@ interface QuizMeta {
 interface LeaderboardRow {
   rank: number;
   user_id: string;
+  user_email?: string | null;
   score: number | null;
   time_taken_seconds: number | null;
   submitted_at: string | null;
@@ -52,6 +54,7 @@ const CompetitiveView: React.FC = () => {
   const [payload, setPayload] = useState<QuizPayloadRow[] | null>(null);
   const [answers, setAnswers] = useState<Record<string, number | null>>({});
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [quizEndTs, setQuizEndTs] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
   const [boardQuiz, setBoardQuiz] = useState<QuizMeta | null>(null);
@@ -67,6 +70,43 @@ const CompetitiveView: React.FC = () => {
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [page, setPage] = useState<number>(1);
   const pageSize = 10;
+  const autoSubmitRef = useRef(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const last30AlertedRef = useRef(false);
+  const STORAGE_KEY = 'competitive_exam_session_v1';
+  const EXAM_STYLE_ID = 'exam-mode-style';
+
+  const enableExamMode = useCallback(() => {
+    try {
+      document.body.classList.add('exam-mode');
+      if (!document.getElementById(EXAM_STYLE_ID)) {
+        const style = document.createElement('style');
+        style.id = EXAM_STYLE_ID;
+        style.textContent = `
+          /* Hide common chrome while in exam mode */
+          body.exam-mode header, body.exam-mode nav, body.exam-mode aside,
+          body.exam-mode .sidebar, body.exam-mode .app-sidebar,
+          body.exam-mode .global-assistant, body.exam-mode [data-global-assistant],
+          body.exam-mode .topbar, body.exam-mode .leftbar {
+            display: none !important;
+          }
+          /* Prevent background scrolling and interactions */
+          body.exam-mode {
+            overflow: hidden !important;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+    } catch {}
+  }, []);
+
+  const disableExamMode = useCallback(() => {
+    try {
+      document.body.classList.remove('exam-mode');
+      const el = document.getElementById(EXAM_STYLE_ID);
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    } catch {}
+  }, []);
 
   const isLive = (q: QuizMeta) => {
     const now = Date.now();
@@ -82,13 +122,27 @@ const CompetitiveView: React.FC = () => {
   }, []);
 
   const viewLeaderboard = useCallback(async (q: QuizMeta) => {
+    if (!q.published_leaderboard) {
+      setToast('Leaderboard not published yet');
+      setTimeout(() => setToast(null), 2500);
+      return;
+    }
     try {
       setLoadingBoard(true);
       setBoardQuiz(q);
       setLeaderboard(null);
-      const { data, error } = await supabase.rpc('leaderboard', { p_quiz_id: q.id, p_limit: 100 });
-      if (error) throw error;
-      setLeaderboard(Array.isArray(data) ? (data as LeaderboardRow[]) : []);
+      // Prefer public leaderboard with masked emails
+      let rows: any[] = [];
+      try {
+        const { data: pubData, error: pubErr } = await supabase.rpc('leaderboard_public', { p_quiz_id: q.id, p_limit: 100 });
+        if (pubErr) throw pubErr;
+        rows = Array.isArray(pubData) ? pubData as any[] : [];
+      } catch {
+        // Fallback to internal leaderboard if public RPC not available
+        const { data: lbData } = await supabase.rpc('leaderboard', { p_quiz_id: q.id, p_limit: 100 });
+        rows = Array.isArray(lbData) ? lbData as any[] : [];
+      }
+      setLeaderboard(rows as LeaderboardRow[]);
     } catch (e: any) {
       setLeaderboard([]);
       alert(e.message || 'Failed to load leaderboard (may be unpublished).');
@@ -181,6 +235,29 @@ const CompetitiveView: React.FC = () => {
       rows.forEach(r => { initAns[r.question_id] = null; });
       setAnswers(initAns);
       setTimeLeft(q.duration_seconds);
+      // Use the stricter of server end_at and client start+duration
+      const clientEnd = Date.now() + (q.duration_seconds * 1000);
+      const serverEnd = new Date(q.end_at).getTime();
+      setQuizEndTs(Math.min(clientEnd, serverEnd));
+      autoSubmitRef.current = false;
+      last30AlertedRef.current = false;
+      // Persist initial session to survive refresh
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          quiz_id: q.id,
+          end_ts: Math.min(clientEnd, serverEnd),
+          answers: initAns,
+          started_at: Date.now(),
+        }));
+      } catch {}
+      enableExamMode();
+      try {
+        // Attempt to enter fullscreen for better focus (non-blocking)
+        if (document?.documentElement?.requestFullscreen) {
+          await document.documentElement.requestFullscreen();
+          setIsFullscreen(true);
+        }
+      } catch {}
     } catch (e: any) {
       setError(e.message || 'Failed to load quiz');
     } finally {
@@ -188,22 +265,87 @@ const CompetitiveView: React.FC = () => {
     }
   };
 
-  // countdown when taking quiz
+  // countdown when taking quiz (robust using absolute end timestamp)
   useEffect(() => {
-    if (activeQuiz && timeLeft !== null) {
-      if (timeLeft <= 0) {
-        // auto submit
-        handleSubmit();
-        return;
+    if (!activeQuiz || quizEndTs == null) return;
+    const tick = () => {
+      const tl = Math.ceil((quizEndTs - Date.now()) / 1000);
+      setTimeLeft(Math.max(0, tl));
+      if (tl <= 1) {
+        if (!autoSubmitRef.current) {
+          autoSubmitRef.current = true;
+          handleSubmit();
+        }
+      } else if (tl <= 30 && !last30AlertedRef.current) {
+        last30AlertedRef.current = true;
+        setToast('Only 30 seconds left!');
+        setTimeout(() => setToast(null), 3000);
       }
-      const t = setTimeout(() => setTimeLeft(prev => (prev !== null ? prev - 1 : prev)), 1000);
-      return () => clearTimeout(t);
+      // Persist answers + remaining time frequently
+      try {
+        const existing = localStorage.getItem(STORAGE_KEY);
+        if (existing) {
+          const obj = JSON.parse(existing);
+          obj.answers = answers;
+          obj.end_ts = quizEndTs;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
+        }
+      } catch {}
+    };
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [activeQuiz, quizEndTs, answers]);
+
+  // Restore persisted session on mount (if quiz still live)
+  useEffect(() => {
+    const restore = async () => {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (!obj?.quiz_id || !obj?.end_ts) return;
+        if (Date.now() > obj.end_ts + 10000) { // allow 10s grace
+          // Session expired; clear
+          localStorage.removeItem(STORAGE_KEY);
+          return;
+        }
+        if (!SUPABASE_ENABLED) return;
+        // Fetch quiz meta and payload to restore UI
+        const { data: qrows } = await supabase
+          .from('competitive_quizzes')
+          .select('id, title, subject, description, start_at, end_at, duration_seconds, published_leaderboard, quiz_focus')
+          .eq('id', obj.quiz_id)
+          .limit(1);
+        const quiz = Array.isArray(qrows) && qrows[0] as any;
+        if (!quiz) return;
+        const { data, error } = await supabase.rpc('quiz_payload', { p_quiz_id: quiz.id });
+        if (error) return;
+        const rows = (data as QuizPayloadRow[]) || [];
+        setActiveQuiz(quiz);
+        setPayload(rows);
+        setAnswers(obj.answers || {});
+        setQuizEndTs(obj.end_ts);
+        setTimeLeft(Math.max(0, Math.ceil((obj.end_ts - Date.now()) / 1000)));
+        enableExamMode();
+      } catch {}
+    };
+    restore();
+  }, []);
+
+  // Lock background scroll when quiz overlay is open
+  useEffect(() => {
+    if (activeQuiz && payload) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => { document.body.style.overflow = prev; };
     }
-  }, [activeQuiz, timeLeft]);
+  }, [activeQuiz, payload]);
 
   const handleSubmit = useCallback(async () => {
     if (!activeQuiz || !payload) return;
     if (!user) { await signInWithGoogle(); return; }
+    if (submitting) return;
     setSubmitting(true);
     setResultMsg(null);
     try {
@@ -215,6 +357,14 @@ const CompetitiveView: React.FC = () => {
       if (error) throw error;
       const row = Array.isArray(data) ? data[0] : data;
       setResultMsg(`Submitted! Score ${row?.score ?? 0}, Accuracy ${row?.accuracy?.toFixed?.(2) ?? row?.accuracy}%`);
+      try {
+        track('competitive_submit', {
+          quiz_id: activeQuiz.id,
+          score: row?.score ?? null,
+          accuracy: row?.accuracy ?? null,
+          time_taken_seconds: row?.time_taken_seconds ?? null,
+        });
+      } catch {}
       setToast('Submission received!');
       setTimeout(() => setToast(null), 3000);
       const submittedQuiz = activeQuiz; // capture before clearing
@@ -223,6 +373,14 @@ const CompetitiveView: React.FC = () => {
       setPayload(null);
       setAnswers({});
       setTimeLeft(null);
+      setQuizEndTs(null);
+      // Exit fullscreen if we had entered it
+      try {
+        if (document?.fullscreenElement) {
+          await document.exitFullscreen();
+        }
+      } catch {}
+      setIsFullscreen(false);
       await fetchQuizzes();
       // Auto-open leaderboard if published
       if (submittedQuiz?.published_leaderboard) {
@@ -232,6 +390,8 @@ const CompetitiveView: React.FC = () => {
       setResultMsg(`Submit failed: ${e.message || e}`);
     } finally {
       setSubmitting(false);
+      try { localStorage.removeItem(STORAGE_KEY); } catch {}
+      disableExamMode();
     }
   }, [activeQuiz, payload, answers, user, signInWithGoogle, fetchQuizzes]);
 
@@ -248,14 +408,25 @@ const CompetitiveView: React.FC = () => {
   }
 
   if (activeQuiz && payload) {
+    const tl = Math.max(0, timeLeft ?? 0);
+    const pct = activeQuiz.duration_seconds > 0 ? Math.max(0, Math.min(100, Math.round((tl / activeQuiz.duration_seconds) * 100))) : 0;
     return (
-      <div className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">{activeQuiz.title} — {activeQuiz.subject}</h2>
-          <div className="text-sm bg-[rgb(var(--color-input))] px-3 py-1 rounded-md">{t('time_left')}: {timeLeft ?? 0}s</div>
+      <div className="fixed inset-0 z-[2147483647] overflow-y-auto bg-[rgb(var(--color-sidebar))]" style={{ minHeight: '100svh' }}>
+        {/* Toast inside overlay */}
+        {toast && (
+          <div className="fixed top-4 right-4 z-[2147483647] px-4 py-2 rounded-md bg-amber-600 text-white shadow-lg">{toast}</div>
+        )}
+        {/* Sticky header with timer */}
+        <div className="sticky top-0 z-[2147483000] border-b border-[rgb(var(--color-border))] bg-[rgb(var(--color-sidebar))]">
+          <div className="px-4 py-3 flex items-center justify-between">
+            <h2 className="text-base sm:text-lg font-semibold truncate">{activeQuiz.title} — {activeQuiz.subject}</h2>
+            <div className={`text-sm px-3 py-1 rounded-md ${tl <= 30 ? 'bg-red-700 text-white' : 'bg-[rgb(var(--color-input))]'}`}>{t('time_left')}: {tl}s</div>
+          </div>
+          <div className="h-1 bg-[rgb(var(--color-input))]"><div className="h-1 bg-[rgb(var(--color-accent))]" style={{ width: `${pct}%` }} /></div>
         </div>
-        {resultMsg && <div className="p-3 rounded bg-[rgb(var(--color-input))]">{resultMsg}</div>}
-        <div className="space-y-3">
+        {/* Content */}
+        <div className="p-4 space-y-3">
+          {resultMsg && <div className="p-3 rounded bg-[rgb(var(--color-input))]">{resultMsg}</div>}
           {payload.map((q, idx) => (
             <Card key={q.question_id}>
               <div className="text-sm text-[rgb(var(--color-text-secondary))] mb-1">{t('question_n')} {idx + 1}</div>
@@ -271,10 +442,24 @@ const CompetitiveView: React.FC = () => {
               </div>
             </Card>
           ))}
+          <div className="flex items-center gap-2 pb-8">
+            <button disabled={submitting} onClick={handleSubmit} className="px-4 py-2 rounded-md bg-[rgb(var(--color-primary))] text-white disabled:bg-slate-600">{t('submit')}</button>
+            <button
+              onClick={async () => {
+                setActiveQuiz(null); setPayload(null); setAnswers({}); setTimeLeft(null); setQuizEndTs(null); setResultMsg(null);
+                try { if (document?.fullscreenElement) { await document.exitFullscreen(); } } catch {}
+                try { localStorage.removeItem('competitive_exam_session_v1'); } catch {}
+                // @ts-ignore - disableExamMode in closure
+                try { (disableExamMode as any)(); } catch {}
+                setIsFullscreen(false);
+              }}
+              className="px-4 py-2 rounded-md bg-[rgb(var(--color-input))]"
+            >{t('cancel')}</button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button disabled={submitting} onClick={handleSubmit} className="px-4 py-2 rounded-md bg-[rgb(var(--color-primary))] text-white disabled:bg-slate-600">{t('submit')}</button>
-          <button onClick={() => { setActiveQuiz(null); setPayload(null); setAnswers({}); setTimeLeft(null); setResultMsg(null); }} className="px-4 py-2 rounded-md bg-[rgb(var(--color-input))]">{t('cancel')}</button>
+        {/* Floating timer badge always visible */}
+        <div className={`fixed bottom-4 right-4 z-[2147483647] px-3 py-2 rounded-md shadow-lg ${tl <= 30 ? 'bg-red-700 text-white' : 'bg-[rgb(var(--color-input))] text-white'}`}>
+          {t('time_left')}: {tl}s
         </div>
       </div>
     );
@@ -356,6 +541,19 @@ const CompetitiveView: React.FC = () => {
             const pageItems = filtered.slice(startIdx, startIdx + pageSize);
             return (
               <>
+                {/* If no live items, show next upcoming timer banner in Live tab */}
+                {activeTab === 'live' && source.length === 0 && quizzes.some(q => isUpcoming(q)) && (
+                  <div className="mb-3 p-3 rounded border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))]/50">
+                    {(() => {
+                      const upcoming = quizzes.filter(q => isUpcoming(q)).sort((a,b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+                      const next = upcoming[0];
+                      const s = Math.max(0, Math.floor((new Date(next.start_at).getTime() - nowTs) / 1000));
+                      const mm = Math.floor(s / 60);
+                      const ss = s % 60;
+                      return <div>Next test starts in {mm}m {ss}s — <span className="font-semibold">{next.title}</span></div>;
+                    })()}
+                  </div>
+                )}
                 <div className="grid md:grid-cols-2 gap-4">
                   {pageItems.length === 0 && !loading ? (
                     <div className="text-[rgb(var(--color-text-secondary))]">{t('no_quizzes')}</div>
@@ -398,16 +596,20 @@ const CompetitiveView: React.FC = () => {
                 {attempted[q.id] && (
                   <p className="mt-2 text-xs text-amber-300">{t('already_taken')}</p>
                 )}
-                <div className="mt-2 flex items-center gap-2">
-                  {activeTab === 'past' && attempted[q.id] && q.published_leaderboard && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {(() => { const showMy = activeTab === 'past' || attempted[q.id]; return showMy; })() && (
                     <button
-                      className="px-3 py-1 rounded-md bg-[rgb(var(--color-primary))] text-white hover:bg-[rgb(var(--color-primary-hover))]"
+                      className="px-3 py-2 rounded-md bg-[rgb(var(--color-primary))] text-white hover:bg-[rgb(var(--color-primary-hover))] relative z-10 w-full sm:w-auto"
                       onClick={() => setShowingUserResults(q)}
                     >
                       {t('view_my_results')}
                     </button>
                   )}
-                  <button className="px-3 py-1 rounded-md bg-[rgb(var(--color-input))]" onClick={() => viewLeaderboard(q)}>{t('view_leaderboard')}</button>
+                  <button
+                    className={`px-3 py-2 rounded-md relative z-10 w-full sm:w-auto ${q.published_leaderboard ? 'bg-[rgb(var(--color-input))]' : 'bg-slate-600 cursor-not-allowed opacity-70'}`}
+                    onClick={() => viewLeaderboard(q)}
+                    aria-disabled={!q.published_leaderboard}
+                  >{t('view_leaderboard')}</button>
                   {q.published_leaderboard ? <span className="text-xs text-emerald-300">{t('published')}</span> : <span className="text-xs text-[rgb(var(--color-text-secondary))]">{t('unpublished')}</span>}
                 </div>
               </Card>
@@ -456,7 +658,7 @@ const CompetitiveView: React.FC = () => {
                       {leaderboard.map((r, idx) => (
                         <tr key={idx} className={`border-t border-[rgb(var(--color-border))] ${r.user_id === user?.id ? 'bg-[rgb(var(--color-input))]' : ''}`}>
                           <td className="py-2">{r.rank}</td>
-                          <td className="truncate max-w-[180px]">{r.user_id === user?.id ? 'You' : r.user_id}</td>
+                          <td className="truncate max-w-[220px]">{r.user_id === user?.id ? 'You' : (r.user_email || r.user_id)}</td>
                           <td className="truncate max-w-[120px]">{r.state || '-'}</td>
                           <td className="truncate max-w-[120px]">{r.district || '-'}</td>
                           <td>{r.score ?? '-'}</td>

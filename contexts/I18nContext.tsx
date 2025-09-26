@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useMemo, useState, useEffect } from 'react';
+import { track } from '../services/analytics';
 
 export type Lang = 'en' | 'kn';
 
@@ -129,6 +130,8 @@ const STRINGS: Dict = {
   use_form_hint: { en: 'Use the form to get the latest current affairs summary.', kn: 'ಇತ್ತೀಚಿನ ಸಾಮಯಿಕ ವಿಷಯಗಳ ಸಾರಾಂಶ ಪಡೆಯಲು ಫಾರ್ಮ್ ಬಳಸಿ.' },
   gemini_tip: { en: 'Gemini is available by default. Add a Perplexity API key in settings for an alternative news source.', kn: 'ಜಿಮಿನಿ ಡೀಫಾಲ್ಟ್ ಆಗಿ ಲಭ್ಯ. ಪರ್ಯಾಯ ಸುದ್ದಿ ಮೂಲಕ್ಕಾಗಿ ಸೆಟ್ಟಿಂಗ್ಸ್‌ನಲ್ಲಿ Perplexity API ಕೀ ಸೇರಿಸಿ.' },
   no_search_history: { en: 'No search history yet.', kn: 'ಇನ್ನೂ ಹುಡುಕಾಟ ಇತಿಹಾಸ ಇಲ್ಲ.' },
+  generate_quiz_on_summary: { en: 'Generate Quiz on this summary', kn: 'ಈ ಸಾರಾಂಶದ ಮೇಲೆ ಪ್ರಶ್ನೋತ್ತರ ರಚಿಸಿ' },
+  explain_this_summary: { en: 'Explain this summary', kn: 'ಈ ಸಾರಾಂಶವನ್ನು ವಿವರಿಸಿ' },
 
   // Notes
   notes: { en: 'Notes', kn: 'ಟಿಪ್ಪಣಿಗಳು' },
@@ -177,6 +180,8 @@ const STRINGS: Dict = {
   top_scores: { en: 'Top Scores', kn: 'ಅತ್ಯುತ್ತಮ ಅಂಕಗಳು' },
   showing_results: { en: 'Showing {0} of {1} results', kn: '{1}ರಲ್ಲಿ {0} ಫಲಿತಾಂಶಗಳು ತೋರಿಸಲಾಗುತ್ತಿದೆ' },
   no_results_found: { en: 'No results found.', kn: 'ಯಾವ ಫಲಿತಾಂಶವೂ ಕಂಡುಬಂದಿಲ್ಲ.' },
+  q_breakdown: { en: 'Question-by-Question Breakdown:', kn: 'ಪ್ರಶ್ನೆ-ಪ್ರಶ್ನೆಯ ವಿವರ:' },
+  no_detailed_results: { en: 'No detailed results available.', kn: 'ವಿಸ್ತೃತ ಫಲಿತಾಂಶಗಳು ಲಭ್ಯವಿಲ್ಲ.' },
 };
 
 interface I18nContextValue {
@@ -196,8 +201,10 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const setLang = (l: Lang) => {
+    const prev = lang;
     setLangState(l);
     try { localStorage.setItem('easyway-lang', l); } catch {}
+    try { track('lang_toggled', { from: prev, to: l }); } catch {}
   };
 
   const value = useMemo<I18nContextValue>(() => ({

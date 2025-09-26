@@ -29,7 +29,7 @@ const CurrentAffairs: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { apiKeys } = useAppContext();
+  const { apiKeys, setActiveView, setExplainerPrefillTopic, setQuizPrefill } = useAppContext();
   
   const { lang, t } = useI18n();
   const newsService = useMemo(() => {
@@ -107,6 +107,28 @@ const CurrentAffairs: React.FC = () => {
           <h2 className="text-xl font-bold mb-4 text-[rgb(var(--color-accent))]">
             {t('summary_for')} {new Date(activeSession.query.date + 'T12:00:00Z').toLocaleDateString()}
           </h2>
+          <div className="flex flex-col sm:flex-row gap-2 mb-4">
+            <button
+              className="px-3 py-2 text-sm rounded-md bg-[rgb(var(--color-primary))] text-white hover:bg-[rgb(var(--color-primary-hover))]"
+              onClick={() => {
+                const topic = activeSession.query.keywords || `Current Affairs ${activeSession.query.date}`;
+                setQuizPrefill({ topic, numQuestions: 10, difficulty: 'Medium' });
+                setActiveView('QUIZ' as any);
+              }}
+            >
+              {t('generate_quiz_on_summary')}
+            </button>
+            <button
+              className="px-3 py-2 text-sm rounded-md bg-[rgb(var(--color-input))] hover:bg-[rgb(var(--color-input-hover))]"
+              onClick={() => {
+                const topic = activeSession.query.keywords || `Current Affairs ${activeSession.query.date}`;
+                setExplainerPrefillTopic(topic);
+                setActiveView('EXPLAINER' as any);
+              }}
+            >
+              {t('explain_this_summary')}
+            </button>
+          </div>
           <MarkdownRenderer content={activeSession.summary} />
           {activeSession.sources.length > 0 && (
             <div className="mt-6 border-t border-[rgb(var(--color-border))] pt-4">

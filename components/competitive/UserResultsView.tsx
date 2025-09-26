@@ -32,6 +32,7 @@ interface UserAttemptDetail {
   is_correct: boolean;
   points_earned: number;
   question_order: number;
+  explanation?: string | null;
 }
 
 interface UserResultsViewProps {
@@ -51,31 +52,55 @@ const UserResultsView: React.FC<UserResultsViewProps> = ({ quiz, onClose }) => {
 
       setLoading(true);
       try {
-        // First get the user's attempt for this quiz
-        const { data: attemptData, error: attemptError } = await supabase
-          .from('competitive_quiz_attempts')
-          .select('*')
-          .eq('quiz_id', quiz.id)
-          .eq('user_id', user.id)
-          .single();
+        // Prefer RPC which respects RLS and returns a single attempt
+        let attemptId: string | null = null;
+        let attemptRow: any = null;
+        const { data: rpcData, error: rpcErr } = await supabase.rpc('my_competitive_attempt', { p_quiz_id: quiz.id });
+        if (!rpcErr && Array.isArray(rpcData) && rpcData.length > 0) {
+          attemptId = rpcData[0]?.id || null;
+        }
+        if (!attemptId) {
+          // Fallback: direct table query (should be allowed by RLS for own row)
+          const { data: attemptData, error: attemptError } = await supabase
+            .from('competitive_quiz_attempts')
+            .select('*')
+            .eq('quiz_id', quiz.id)
+            .eq('user_id', user.id)
+            .limit(1);
+          if (!attemptError && Array.isArray(attemptData) && attemptData.length > 0) {
+            attemptRow = attemptData[0];
+            attemptId = attemptRow.id;
+          }
+        }
+        // If we only got id via RPC, fetch row for summary fields
+        if (attemptId && !attemptRow) {
+          const { data: rowData } = await supabase
+            .from('competitive_quiz_attempts')
+            .select('*')
+            .eq('id', attemptId)
+            .single();
+          attemptRow = rowData || null;
+        }
 
-        if (attemptError || !attemptData) {
-          console.error('Error fetching user attempt:', attemptError);
+        if (!attemptId || !attemptRow) {
+          setUserAttempt(null);
+          setAttemptDetails([]);
           setLoading(false);
           return;
         }
 
-        setUserAttempt(attemptData);
+        setUserAttempt(attemptRow);
 
-        // Only fetch detailed results if leaderboard is published
+        // Only fetch detailed results if leaderboard is published (user-facing RPC)
         if (quiz.published_leaderboard) {
-          const { data: detailsData, error: detailsError } = await supabase.rpc('admin_get_attempt_details', {
-            p_attempt_id: attemptData.id
+          const { data: detailsData, error: detailsError } = await supabase.rpc('user_attempt_details', {
+            p_attempt_id: attemptId
           });
-
           if (!detailsError && detailsData) {
             setAttemptDetails(detailsData as UserAttemptDetail[]);
           }
+        } else {
+          setAttemptDetails([]);
         }
       } catch (error) {
         console.error('Error fetching user results:', error);
@@ -86,25 +111,6 @@ const UserResultsView: React.FC<UserResultsViewProps> = ({ quiz, onClose }) => {
 
     fetchUserResults();
   }, [user, quiz]);
-
-  if (!quiz.published_leaderboard) {
-    return (
-      <Card>
-        <div className="text-center py-8">
-          <h3 className="text-lg font-semibold mb-2">Quiz Results</h3>
-          <p className="text-[rgb(var(--color-text-secondary))]">
-            Detailed results will be available once the leaderboard is published.
-          </p>
-          <button
-            onClick={onClose}
-            className="mt-4 px-4 py-2 rounded-md bg-[rgb(var(--color-primary))] text-white hover:bg-[rgb(var(--color-primary-hover))]"
-          >
-            Close
-          </button>
-        </div>
-      </Card>
-    );
-  }
 
   return (
     <div className="space-y-4">
@@ -155,11 +161,7 @@ const UserResultsView: React.FC<UserResultsViewProps> = ({ quiz, onClose }) => {
             <LoadingSpinner />
             <span className="ml-2">Loading your results...</span>
           </div>
-        ) : attemptDetails.length === 0 ? (
-          <div className="text-center py-8 text-[rgb(var(--color-text-secondary))]">
-            No detailed results available.
-          </div>
-        ) : (
+        ) : quiz.published_leaderboard && attemptDetails.length > 0 ? (
           <div className="space-y-4">
             <h4 className="font-semibold text-base">Question-by-Question Breakdown:</h4>
             {attemptDetails.map((detail, detailIdx) => (
@@ -216,9 +218,19 @@ const UserResultsView: React.FC<UserResultsViewProps> = ({ quiz, onClose }) => {
                       </div>
                     </div>
                   ))}
+                  {detail.explanation && (
+                    <div className="mt-3 text-xs text-[rgb(var(--color-text-secondary))] bg-[rgb(var(--color-input))] p-2 rounded-md">
+                      <div className="font-semibold mb-1 text-slate-300">Explanation</div>
+                      <MarkdownRenderer content={detail.explanation} />
+                    </div>
+                  )}
                 </div>
               </Card>
             ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-[rgb(var(--color-text-secondary))]">
+            {quiz.published_leaderboard ? 'No detailed results available.' : 'Detailed breakdown will appear after leaderboard is published.'}
           </div>
         )}
       </Card>

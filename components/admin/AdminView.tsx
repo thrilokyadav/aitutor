@@ -63,6 +63,7 @@ interface NewQuestion {
   options: string[];
   correct_index: number;
   points: number;
+  explanation?: string;
 }
 
 const AdminView: React.FC = () => {
@@ -105,11 +106,31 @@ const AdminView: React.FC = () => {
   const [duration, setDuration] = useState(600);
 
   const [questions, setQuestions] = useState<NewQuestion[]>([
-    { question: '', options: ['', '', '', ''], correct_index: 0, points: 1 },
+    { question: '', options: ['', '', '', ''], correct_index: 0, points: 1, explanation: '' },
   ]);
 
   const [genCount, setGenCount] = useState(10);
   const [genDifficulty, setGenDifficulty] = useState<'Easy' | 'Medium' | 'Hard'>('Medium');
+  type AnalyticsRow = { day: string; event: string; cnt: number };
+  const [analytics, setAnalytics] = useState<AnalyticsRow[] | null>(null);
+  const analyticsDerived = useMemo(() => {
+    if (!analytics || analytics.length === 0) {
+      return {
+        days: [] as string[],
+        byEvent: {} as Record<string, number[]>,
+        totals: {} as Record<string, number>,
+      };
+    }
+    const eventList = ['quiz_start','quiz_submit','competitive_submit','lang_toggled'];
+    const daySet = Array.from(new Set(analytics.map(r => r.day))).sort();
+    const byEvent: Record<string, number[]> = {};
+    const totals: Record<string, number> = {};
+    eventList.forEach(ev => {
+      byEvent[ev] = daySet.map(d => analytics.find(r => r.day === d && r.event === ev)?.cnt ?? 0);
+      totals[ev] = byEvent[ev].reduce((a,b) => a + (b || 0), 0);
+    });
+    return { days: daySet, byEvent, totals };
+  }, [analytics]);
   const filteredUsers = useMemo(() => {
     return users.filter(user => {
       const matchesSearch = user.email.toLowerCase().includes(userSearch.toLowerCase());
@@ -148,6 +169,18 @@ const AdminView: React.FC = () => {
     if (error) setError(error.message);
     setAttemptDetails(Array.isArray(data) ? data as AttemptDetail[] : []);
     setLoading(false);
+  }, []);
+
+  const fetchAnalytics = useCallback(async () => {
+    if (!SUPABASE_ENABLED) return;
+    try {
+      const { data, error } = await supabase.rpc('analytics_daily_counts', { p_days: 14 });
+      if (error) throw error;
+      const rows = Array.isArray(data) ? data as any[] : [];
+      setAnalytics(rows.map(r => ({ day: r.day, event: r.event, cnt: Number(r.cnt) })));
+    } catch (e: any) {
+      // non-fatal
+    }
   }, []);
 
   const openQuizLeaderboard = useCallback(async (quiz: QuizRow) => {
@@ -217,7 +250,7 @@ const AdminView: React.FC = () => {
 
   const gemini = useMemo(() => new GeminiService(), []);
 
-  const addQuestion = useCallback(() => setQuestions(prev => [...prev, { question: '', options: ['', '', '', ''], correct_index: 0, points: 1 }]), [setQuestions]);
+  const addQuestion = useCallback(() => setQuestions(prev => [...prev, { question: '', options: ['', '', '', ''], correct_index: 0, points: 1, explanation: '' }]), [setQuestions]);
   const removeQuestion = useCallback((idx: number) => setQuestions(prev => prev.filter((_, i) => i !== idx)), [setQuestions]);
 
   const fetchQuizzes = useCallback(async () => {
@@ -258,8 +291,9 @@ const AdminView: React.FC = () => {
       fetchQuizzes();
       fetchUsers();
       fetchUserResults();
+      fetchAnalytics();
     }
-  }, [isAdmin, fetchQuizzes, fetchUsers, fetchUserResults]);
+  }, [isAdmin, fetchQuizzes, fetchUsers, fetchUserResults, fetchAnalytics]);
 
   const handleCreateQuiz = async () => {
     if (!isAdmin) return;
@@ -293,13 +327,14 @@ const AdminView: React.FC = () => {
           correct_index: q.correct_index,
           points: q.points || 1,
           order_index: idx,
+          explanation: q.explanation && q.explanation.trim() ? q.explanation.trim() : null,
         }));
         const { error: qserr } = await supabase.from('competitive_quiz_questions').insert(rows);
         if (qserr) throw qserr;
       }
       // Reset form
       setTitle(''); setSubject(''); setDescription(''); setQuizFocus(''); setStartAt(''); setDuration(600);
-      setQuestions([{ question: '', options: ['', '', '', ''], correct_index: 0, points: 1 }]);
+      setQuestions([{ question: '', options: ['', '', '', ''], correct_index: 0, points: 1, explanation: '' }]);
       await fetchQuizzes();
       alert('Quiz created');
     } catch (e: any) {
@@ -322,6 +357,7 @@ const AdminView: React.FC = () => {
         options: q.options,
         correct_index: q.correctAnswerIndex,
         points: 1,
+        explanation: q.explanation || '',
       }));
       setQuestions(mapped);
     } catch (e: any) {
@@ -462,6 +498,15 @@ const AdminView: React.FC = () => {
                   />
                 </div>
               </div>
+              <div className="mt-3">
+                <label className="block text-sm mb-2 text-[rgb(var(--color-text-secondary))]">Explanation (optional)</label>
+                <textarea
+                  className="w-full bg-[rgb(var(--color-input))] p-3 sm:p-2 rounded border border-[rgb(var(--color-border))] text-sm sm:text-base min-h-[90px]"
+                  placeholder="Explanation supporting the correct answer"
+                  value={q.explanation || ''}
+                  onChange={e => setQuestions(prev => prev.map((qq, i) => i === idx ? { ...qq, explanation: e.target.value } : qq))}
+                />
+              </div>
             </div>
           ))}
           <button
@@ -479,6 +524,63 @@ const AdminView: React.FC = () => {
             Create Quiz
           </button>
         </div>
+      </Card>
+
+      {/* Analytics Section */}
+      <Card>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-base sm:text-lg">Analytics (14d)</h3>
+          <button className="px-3 py-1 text-xs rounded bg-[rgb(var(--color-input))]" onClick={fetchAnalytics}>{t('refresh')}</button>
+        </div>
+        {analytics && analytics.length > 0 ? (
+          <div className="overflow-x-auto">
+            {/* Summary: totals and mini charts */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+              {(['quiz_start','quiz_submit','competitive_submit','lang_toggled'] as const).map(ev => {
+                const vals = analyticsDerived.byEvent[ev] || [];
+                const max = Math.max(1, ...vals);
+                return (
+                  <div key={ev} className="p-3 rounded border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))]/40">
+                    <div className="text-xs text-[rgb(var(--color-text-secondary))] mb-1">{ev}</div>
+                    <div className="text-2xl font-bold mb-2">{(analyticsDerived.totals[ev] || 0).toLocaleString()}</div>
+                    <div className="flex items-end gap-1 h-10">
+                      {vals.map((v, i) => (
+                        <div key={i} className="w-1.5 bg-[rgb(var(--color-accent))] rounded-sm" style={{ height: `${(v / max) * 100}%`, opacity: v === 0 ? 0.3 : 1 }} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <table className="w-full text-xs sm:text-sm">
+              <thead>
+                <tr className="text-left text-[rgb(var(--color-text-secondary))]">
+                  <th className="py-2">Day</th>
+                  <th>quiz_start</th>
+                  <th>quiz_submit</th>
+                  <th>competitive_submit</th>
+                  <th>lang_toggled</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from(new Set(analytics.map(r => r.day))).sort((a,b) => (a < b ? 1 : -1)).map(day => {
+                  const byEvent = (ev: string) => analytics.find(r => r.day === day && r.event === ev)?.cnt ?? 0;
+                  return (
+                    <tr key={day} className="border-t border-[rgb(var(--color-border))]">
+                      <td className="py-2 whitespace-nowrap">{day}</td>
+                      <td>{byEvent('quiz_start')}</td>
+                      <td>{byEvent('quiz_submit')}</td>
+                      <td>{byEvent('competitive_submit')}</td>
+                      <td>{byEvent('lang_toggled')}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-[rgb(var(--color-text-secondary))] text-sm">No analytics yet.</div>
+        )}
       </Card>
 
       {/* Leaderboards Section (top-level) */}
@@ -519,7 +621,7 @@ const AdminView: React.FC = () => {
               className="px-2 py-1 text-xs rounded bg-[rgb(var(--color-input))] hover:bg-[rgb(var(--color-input-hover))]"
               onClick={() => { setLbQuiz(null); setLbRows(null); }}
             >
-              Close
+              {t('close')}
             </button>
           </div>
           {lbLoading ? (
@@ -531,14 +633,14 @@ const AdminView: React.FC = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-[rgb(var(--color-text-secondary))]">
-                    <th className="py-2">Rank</th>
-                    <th>User</th>
-                    <th>State</th>
-                    <th>District</th>
-                    <th>Score</th>
-                    <th>Accuracy</th>
-                    <th>Time (s)</th>
-                    <th>Submitted</th>
+                    <th className="py-2">{t('tbl_rank')}</th>
+                    <th>{t('tbl_user')}</th>
+                    <th>{t('tbl_state')}</th>
+                    <th>{t('tbl_district')}</th>
+                    <th>{t('tbl_score')}</th>
+                    <th>{t('accuracy')}</th>
+                    <th>{t('tbl_time_s')}</th>
+                    <th>{t('tbl_submitted')}</th>
                   </tr>
                 </thead>
                 <tbody>

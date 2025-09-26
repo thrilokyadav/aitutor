@@ -1,4 +1,4 @@
-﻿import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { motion, useSpring, useTransform, AnimatePresence } from 'framer-motion';
 import GeminiService from '../services/geminiService';
 import { QuizQuestion, QuizDifficulty, QuizResult } from '../types';
@@ -14,6 +14,7 @@ import { CloseIcon } from './icons/CloseIcon';
 import { supabase, SUPABASE_ENABLED } from '../services/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
+import { track } from '../services/analytics';
 
 const SECONDS_PER_QUESTION = 90;
 const QUIZ_RESULTS_KEY = 'easyway-tutor-quiz-results';
@@ -56,6 +57,7 @@ const QuizGenerator: React.FC = () => {
   const { user, signInWithGoogle } = useAuth();
   const { lang, t } = useI18n();
   const geminiService = useMemo(() => new GeminiService(), []);
+  const { quizPrefill, setQuizPrefill } = useAppContext();
 
   const saveQuizResult = useCallback(async () => {
      if (questions.length === 0) return;
@@ -123,6 +125,26 @@ const QuizGenerator: React.FC = () => {
       // Encourage sign-in so results can sync to dashboard
       try { await signInWithGoogle(); } catch {}
     }
+    // Analytics: quiz_submit
+    try {
+      const answeredCount = userAnswers.filter(a => a !== null).length;
+      const totalDuration = Math.max(1, (reviewingQuiz ? reviewingQuiz.questions.length : questions.length) * SECONDS_PER_QUESTION);
+      const timeUsed = Math.max(0, totalDuration - timeLeft);
+      // Compute score for live session
+      const computedScore = reviewingQuiz ? reviewingQuiz.score : userAnswers.reduce((acc, answer, index) => (
+        answer === questions[index]?.correctAnswerIndex ? acc + 1 : acc
+      ), 0);
+      track('quiz_submit', {
+        topic,
+        totalQuestions: reviewingQuiz ? reviewingQuiz.totalQuestions : questions.length,
+        answeredCount,
+        score: computedScore,
+        accuracyPct: (computedScore / Math.max(1, (reviewingQuiz ? reviewingQuiz.totalQuestions : questions.length))) * 100,
+        timeUsed,
+        avgTimePerQuestion: answeredCount ? timeUsed / answeredCount : null,
+        lang,
+      });
+    } catch {}
     await saveQuizResult();
   }, [saveQuizResult, user, signInWithGoogle]);
   
@@ -141,6 +163,36 @@ const QuizGenerator: React.FC = () => {
       return () => clearInterval(timer);
     }
   }, [questions.length, showResults, handleSubmit]);
+
+  // Prefill from AppContext when navigating from other views (e.g., Current Affairs)
+  useEffect(() => {
+    if (quizPrefill) {
+      if (quizPrefill.topic) setTopic(quizPrefill.topic);
+      if (typeof quizPrefill.numQuestions === 'number') setNumQuestions(quizPrefill.numQuestions);
+      if (quizPrefill.difficulty) setDifficulty(quizPrefill.difficulty as QuizDifficulty);
+      // Clear prefill so it doesn't persist across navigations
+      setQuizPrefill(null);
+    }
+  }, [quizPrefill, setQuizPrefill]);
+
+  // Track abandonment on unmount if quiz started but not submitted
+  useEffect(() => {
+    return () => {
+      if (questions.length > 0 && !showResults) {
+        const totalDuration = questions.length * SECONDS_PER_QUESTION;
+        const answeredCount = userAnswers.filter(a => a !== null).length;
+        const timeUsed = Math.max(0, totalDuration - timeLeft);
+        track('quiz_abandon', {
+          topic,
+          totalQuestions: questions.length,
+          answeredCount,
+          timeUsed,
+          avgTimePerQuestion: answeredCount ? timeUsed / answeredCount : null,
+          lang,
+        });
+      }
+    };
+  }, [questions.length, showResults, userAnswers, timeLeft, topic, lang]);
   
   const handleGenerateQuiz = useCallback(async () => {
     if (topic.trim() === '') return;
@@ -153,6 +205,9 @@ const QuizGenerator: React.FC = () => {
 
     const duration = numQuestions * SECONDS_PER_QUESTION;
     setTimeLeft(duration);
+
+    // Analytics: quiz_start
+    track('quiz_start', { topic, numQuestions, difficulty, lang });
 
     try {
       const quizQuestions = await geminiService.generateQuiz(topic, numQuestions, difficulty, lang);
@@ -424,4 +479,5 @@ const QuizHistoryPanel: React.FC<{history: QuizResult[], onReview: (result: Quiz
 
 
 export default QuizGenerator;
+
 

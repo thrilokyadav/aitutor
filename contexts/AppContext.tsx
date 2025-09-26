@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, Dispatch, SetStateAction, useEffect } from 'react';
-import { ActiveView, Theme, UserProfile, ApiKeys } from '../types';
+import { ActiveView, Theme, UserProfile, ApiKeys, QuizConfig } from '../types';
 import useLocalStorage from '../hooks/useLocalStorage';
 
 interface AppContextType {
@@ -9,6 +9,8 @@ interface AppContextType {
     setActiveSubject: Dispatch<SetStateAction<string | null>>;
     explainerPrefillTopic: string | null;
     setExplainerPrefillTopic: Dispatch<SetStateAction<string | null>>;
+    quizPrefill: QuizConfig | null;
+    setQuizPrefill: Dispatch<SetStateAction<QuizConfig | null>>;
     isSettingsOpen: boolean;
     setIsSettingsOpen: Dispatch<SetStateAction<boolean>>;
     theme: Theme;
@@ -27,6 +29,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [activeView, setActiveView] = useState<ActiveView>(ActiveView.TUTOR);
     const [activeSubject, setActiveSubject] = useState<string | null>(null);
     const [explainerPrefillTopic, setExplainerPrefillTopic] = useState<string | null>(null);
+    const [quizPrefill, setQuizPrefill] = useState<QuizConfig | null>(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     
     const [theme, setThemeState] = useLocalStorage<Theme>('easyway-theme', 'default');
@@ -50,6 +53,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveSubject,
         explainerPrefillTopic,
         setExplainerPrefillTopic,
+        quizPrefill,
+        setQuizPrefill,
         isSettingsOpen,
         setIsSettingsOpen,
         theme,
