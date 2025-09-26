@@ -7,12 +7,14 @@ const OnboardingForm: React.FC<{ onDone: () => void }> = ({ onDone }) => {
   const { upsertProfile } = useProfile(user?.id ?? null);
   const [fullName, setFullName] = useState('');
   const [studyGoal, setStudyGoal] = useState('');
+  const [state, setState] = useState('');
+  const [district, setDistrict] = useState('');
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const { error } = await upsertProfile({ full_name: fullName, study_goal: studyGoal });
+    const { error } = await upsertProfile({ full_name: fullName, study_goal: studyGoal, state, district });
     setSaving(false);
     if (error) {
       alert('Failed to save profile: ' + error.message);
@@ -37,11 +39,32 @@ const OnboardingForm: React.FC<{ onDone: () => void }> = ({ onDone }) => {
 
         <label className="block text-sm mb-1">Study goal</label>
         <input
-          className="w-full mb-6 p-2 rounded-md bg-[rgb(var(--color-input))] border border-[rgb(var(--color-border))]"
+          className="w-full mb-4 p-2 rounded-md bg-[rgb(var(--color-input))] border border-[rgb(var(--color-border))]"
           value={studyGoal}
           onChange={(e) => setStudyGoal(e.target.value)}
           placeholder="e.g., Crack UPSC Prelims 2025"
         />
+
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-sm mb-1">State</label>
+            <input
+              className="w-full p-2 rounded-md bg-[rgb(var(--color-input))] border border-[rgb(var(--color-border))]"
+              value={state}
+              onChange={(e) => setState(e.target.value)}
+              placeholder="Your state"
+            />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">District</label>
+            <input
+              className="w-full p-2 rounded-md bg-[rgb(var(--color-input))] border border-[rgb(var(--color-border))]"
+              value={district}
+              onChange={(e) => setDistrict(e.target.value)}
+              placeholder="Your district"
+            />
+          </div>
+        </div>
 
         <button
           type="submit"

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppContext } from '../contexts/AppContext';
 import { Theme, UserProfile, ApiKeys } from '../types';
+import { useI18n } from '../contexts/I18nContext';
 
 const THEMES: { id: Theme, name: string }[] = [
     { id: 'default', name: 'Cyberpunk Neon' },
@@ -26,6 +27,7 @@ const SettingsModal: React.FC = () => {
     } = useAppContext();
 
     const [activeTab, setActiveTab] = useState('account');
+    const { lang, setLang } = useI18n();
 
     const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setProfile(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -101,6 +103,23 @@ const SettingsModal: React.FC = () => {
                         </div>
                     </div>
                 );
+            case 'language':
+                return (
+                    <div>
+                        <h3 className="text-lg font-semibold mb-4">Language</h3>
+                        <p className="text-sm text-[rgb(var(--color-text-secondary))] mb-4">Choose your preferred UI language.</p>
+                        <div className="flex items-center gap-3">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="lang" checked={lang==='en'} onChange={()=>setLang('en')} />
+                                <span>English (EN)</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="lang" checked={lang==='kn'} onChange={()=>setLang('kn')} />
+                                <span>Kannada (KN)</span>
+                            </label>
+                        </div>
+                    </div>
+                );
         }
     }
 
@@ -139,6 +158,7 @@ const SettingsModal: React.FC = () => {
                                 <TabButton id="account">Account</TabButton>
                                 <TabButton id="theme">Theme</TabButton>
                                 <TabButton id="apikeys">API Keys</TabButton>
+                                <TabButton id="language">Language</TabButton>
                             </nav>
                         </div>
                         <div className="flex-1 p-6 overflow-y-auto">

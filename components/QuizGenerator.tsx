@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+﻿import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { motion, useSpring, useTransform, AnimatePresence } from 'framer-motion';
 import GeminiService from '../services/geminiService';
 import { QuizQuestion, QuizDifficulty, QuizResult } from '../types';
@@ -13,6 +13,7 @@ import { ChartBarIcon } from './icons/ChartBarIcon';
 import { CloseIcon } from './icons/CloseIcon';
 import { supabase, SUPABASE_ENABLED } from '../services/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
+import { useI18n } from '../contexts/I18nContext';
 
 const SECONDS_PER_QUESTION = 90;
 const QUIZ_RESULTS_KEY = 'easyway-tutor-quiz-results';
@@ -45,16 +46,16 @@ const QuizGenerator: React.FC = () => {
   const [userAnswers, setUserAnswers] = useState<(number | null)[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   const [timeLeft, setTimeLeft] = useState(0);
+
+  const [error, setError] = useState<string | null>(null);
 
   const [quizHistory, setQuizHistory] = useLocalStorage<QuizResult[]>(QUIZ_RESULTS_KEY, []);
   const [isHistoryVisible, setIsHistoryVisible] = useState(false);
   const [reviewingQuiz, setReviewingQuiz] = useState<QuizResult | null>(null);
-
-  const geminiService = useMemo(() => new GeminiService(), []);
   const { user, signInWithGoogle } = useAuth();
+  const { lang, t } = useI18n();
+  const geminiService = useMemo(() => new GeminiService(), []);
 
   const saveQuizResult = useCallback(async () => {
      if (questions.length === 0) return;
@@ -71,6 +72,7 @@ const QuizGenerator: React.FC = () => {
         timestamp: Date.now(),
         questions,
         userAnswers,
+        userName: user?.email || 'Anonymous',
      };
      setQuizHistory(prev => [result, ...prev].slice(0, 50)); // Keep last 50
 
@@ -113,7 +115,7 @@ const QuizGenerator: React.FC = () => {
         // eslint-disable-next-line no-console
         console.warn('Failed to persist quiz result to Supabase', e);
       }
-  }, [questions, userAnswers, topic, difficulty, setQuizHistory, user]);
+  }, [questions, userAnswers, topic, difficulty, setQuizHistory, user, geminiService]);
 
   const handleSubmit = useCallback(async () => {
     setShowResults(true);
@@ -153,7 +155,7 @@ const QuizGenerator: React.FC = () => {
     setTimeLeft(duration);
 
     try {
-      const quizQuestions = await geminiService.generateQuiz(topic, numQuestions, difficulty);
+      const quizQuestions = await geminiService.generateQuiz(topic, numQuestions, difficulty, lang);
       setQuestions(quizQuestions);
       setUserAnswers(new Array(quizQuestions.length).fill(null));
     } catch (err) {
@@ -162,7 +164,7 @@ const QuizGenerator: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [topic, numQuestions, difficulty, geminiService]);
+  }, [topic, numQuestions, difficulty, geminiService, lang]);
 
   const handleAnswerSelect = (optionIndex: number) => {
     const newAnswers = [...userAnswers];
@@ -203,17 +205,20 @@ const QuizGenerator: React.FC = () => {
       <div className="p-6 h-full overflow-y-auto">
         <div className="max-w-4xl mx-auto">
             {reviewingQuiz && (
-                <button onClick={() => { setReviewingQuiz(null); setIsHistoryVisible(true); }} className="mb-4 text-[rgb(var(--color-accent))] hover:brightness-90">&larr; Back to History</button>
+                <button onClick={() => { setReviewingQuiz(null); setIsHistoryVisible(true); }} className="mb-4 text-[rgb(var(--color-accent))] hover:brightness-90">&larr; {t('back_to_history')}</button>
             )}
-            <h1 className="text-3xl font-bold text-[rgb(var(--color-text-primary))] mb-4">Quiz Results for "{currentTopic}"</h1>
+            <h1 className="text-3xl font-bold text-[rgb(var(--color-text-primary))] mb-2">{t('quiz_results_for')} "{currentTopic}"</h1>
+            <p className="mb-4 text-sm text-[rgb(var(--color-text-secondary))]">
+              User: {reviewingQuiz ? (reviewingQuiz.userName || 'Anonymous') : (user?.email || 'Anonymous')}
+            </p>
             <Card>
                 <div className="text-center">
-                    <p className="text-lg text-[rgb(var(--color-text-secondary))]">Your Score</p>
+                    <p className="text-lg text-[rgb(var(--color-text-secondary))]">{t('your_score')}</p>
                     <p className="text-6xl font-bold text-[rgb(var(--color-accent))] my-2">
                       <AnimatedScore score={score} />
                       <span className="text-3xl text-[rgb(var(--color-text-secondary))]"> / {currentQuestions.length}</span>
                     </p>
-                    <p className="text-lg text-[rgb(var(--color-text-secondary))]">Accuracy: {((score / currentQuestions.length) * 100).toFixed(2)}%</p>
+                    <p className="text-lg text-[rgb(var(--color-text-secondary))]">{t('accuracy')}: {((score / currentQuestions.length) * 100).toFixed(2)}%</p>
                 </div>
             </Card>
             <div className="mt-6 space-y-4">
@@ -232,18 +237,18 @@ const QuizGenerator: React.FC = () => {
                         })}
                         </div>
                         <p className={`mt-3 text-sm ${isCorrect ? 'text-green-400' : 'text-red-400'}`}>
-                           Your answer: {userAnswer !== null ? q.options[userAnswer] : 'Not answered'}
-                           {!isCorrect && <span className="block">Correct answer: {q.options[q.correctAnswerIndex]}</span>}
+                           {t('your_answer')}: {userAnswer !== null ? q.options[userAnswer] : t('not_answered')}
+                           {!isCorrect && <span className="block">{t('correct_answer')}: {q.options[q.correctAnswerIndex]}</span>}
                         </p>
                         <div className="mt-2 text-xs text-[rgb(var(--color-text-secondary))] bg-[rgb(var(--color-input))] p-2 rounded-md">
-                            <p className="font-semibold mb-1 text-slate-300">Explanation:</p>
+                            <p className="font-semibold mb-1 text-slate-300">{t('explanation_label')}:</p>
                             <MarkdownRenderer content={q.explanation} className="prose-sm" />
                         </div>
                     </Card>
                 )
             })}
             </div>
-             <button onClick={resetQuiz} className="mt-6 w-full px-6 py-3 bg-[rgb(var(--color-primary))] text-white font-semibold rounded-lg hover:bg-[rgb(var(--color-primary-hover))] transition-colors">Start New Quiz</button>
+             <button onClick={resetQuiz} className="mt-6 w-full px-6 py-3 bg-[rgb(var(--color-primary))] text-white font-semibold rounded-lg hover:bg-[rgb(var(--color-primary-hover))] transition-colors">{t('start_new_quiz')}</button>
         </div>
       </div>
     );
@@ -257,7 +262,7 @@ const QuizGenerator: React.FC = () => {
             <div className="flex justify-between items-start">
                 <div className="space-y-6 flex-1">
                     <div>
-                        <label htmlFor="topic" className="block text-sm font-medium text-[rgb(var(--color-text-secondary))] mb-2">Topic</label>
+                        <label htmlFor="topic" className="block text-sm font-medium text-[rgb(var(--color-text-secondary))] mb-2">{t('topic_label')}</label>
                         <input
                             id="topic"
                             type="text"
@@ -271,7 +276,7 @@ const QuizGenerator: React.FC = () => {
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label htmlFor="numQuestions" className="block text-sm font-medium text-[rgb(var(--color-text-secondary))] mb-2">Number of Questions</label>
+                            <label htmlFor="numQuestions" className="block text-sm font-medium text-[rgb(var(--color-text-secondary))] mb-2">{t('number_of_questions')}</label>
                             <select
                                 id="numQuestions"
                                 value={numQuestions}
@@ -286,7 +291,7 @@ const QuizGenerator: React.FC = () => {
                             </select>
                         </div>
                         <div>
-                            <label htmlFor="difficulty" className="block text-sm font-medium text-[rgb(var(--color-text-secondary))] mb-2">Difficulty</label>
+                            <label htmlFor="difficulty" className="block text-sm font-medium text-[rgb(var(--color-text-secondary))] mb-2">{t('difficulty')}</label>
                             <select
                                 id="difficulty"
                                 value={difficulty}
@@ -306,25 +311,25 @@ const QuizGenerator: React.FC = () => {
                         disabled={isLoading || topic.trim() === ''}
                         className="w-full px-6 py-3 text-lg bg-gradient-to-r from-[rgb(var(--color-primary))] to-[rgb(var(--color-accent))] text-white font-semibold rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity duration-200 animated-gradient-bg"
                     >
-                        {isLoading ? <LoadingSpinner /> : 'Generate Quiz'}
+                        {isLoading ? <LoadingSpinner /> : t('')}
                     </button>
                 </div>
-                 <button onClick={() => setIsHistoryVisible(true)} className="ml-4 p-2 text-[rgb(var(--color-text-secondary))] hover:text-white transition-colors" title="History & Stats"><HistoryIcon /></button>
+                 <button onClick={() => setIsHistoryVisible(true)} className="ml-4 p-2 text-[rgb(var(--color-text-secondary))] hover:text-white transition-colors" title={t('quiz_history_stats')}><HistoryIcon /></button>
             </div>
             {error && <Card className="mt-4"><p className="text-red-400">{error}</p></Card>}
-            {isLoading && !error && <Card className="mt-4"><div className="flex justify-center items-center gap-3"><LoadingSpinner /><p>Generating {numQuestions} questions... This may take a moment.</p></div></Card>}
-            {!isLoading && !error && <div className="text-center text-[rgb(var(--color-text-secondary))] py-16"><QuizIcon className="mx-auto w-12 h-12 mb-4" /><p>Configure your quiz above and start learning.</p></div>}
+            {isLoading && !error && <Card className="mt-4"><div className="flex justify-center items-center gap-3"><LoadingSpinner /><p>{t('loading')}</p></div></Card>}
+            {!isLoading && !error && <div className="text-center text-[rgb(var(--color-text-secondary))] py-16"><QuizIcon className="mx-auto w-12 h-12 mb-4" /><p>{t('generate_quiz')}</p></div>}
           </Card>
         ) : (
           <div>
             <Card className="sticky top-0 z-10 mb-4">
                 <div className="flex justify-between items-center">
-                    <h2 className="text-xl font-bold text-[rgb(var(--color-accent))]">Quiz on "{topic}"</h2>
+                    <h2 className="text-xl font-bold text-[rgb(var(--color-accent))]">{t('quiz_on')} "{topic}"</h2>
                     <div className="text-lg font-mono bg-[rgb(var(--color-input))] text-[rgb(var(--color-text-primary))] px-3 py-1 rounded-md">{formatTime(timeLeft)}</div>
                 </div>
             </Card>
             <Card>
-                <p className="text-sm text-[rgb(var(--color-text-secondary))] mb-2">Question {currentQuestionIndex + 1}/{questions.length}</p>
+                <p className="text-sm text-[rgb(var(--color-text-secondary))] mb-2">{t('question_n')} {currentQuestionIndex + 1}/{questions.length}</p>
                 <p className="text-lg text-[rgb(var(--color-text-primary))] mb-4 font-semibold">{questions[currentQuestionIndex].question}</p>
                 <div className="space-y-3">
                     {questions[currentQuestionIndex].options.map((option, index) => (
@@ -339,7 +344,7 @@ const QuizGenerator: React.FC = () => {
                 </div>
             </Card>
             <div className="mt-6 flex justify-between items-center">
-                <div className="text-[rgb(var(--color-text-secondary))]">Question {currentQuestionIndex + 1} of {questions.length}</div>
+                <div className="text-[rgb(var(--color-text-secondary))]">{t('question_n')} {currentQuestionIndex + 1} of {questions.length}</div>
                 <button onClick={handleNext} disabled={userAnswers[currentQuestionIndex] === null} className="px-6 py-3 bg-[rgb(var(--color-primary))] text-white font-semibold rounded-lg hover:bg-[rgb(var(--color-primary-hover))] disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors">
                     {currentQuestionIndex < questions.length - 1 ? 'Next Question' : 'Show Results'}
                 </button>
@@ -374,17 +379,17 @@ const QuizHistoryPanel: React.FC<{history: QuizResult[], onReview: (result: Quiz
                 className="bg-[rgb(var(--color-card))] w-full max-w-4xl rounded-xl border border-[rgb(var(--color-border))] shadow-2xl flex flex-col max-h-[90vh]"
             >
                 <div className="p-4 border-b border-[rgb(var(--color-border))] flex justify-between items-center">
-                    <h2 className="text-xl font-bold">Quiz History & Stats</h2>
+                    <h2 className="text-xl font-bold">{t('quiz_history_stats')}</h2>
                     <button onClick={onClose} className="p-2 rounded-full hover:bg-[rgb(var(--color-input))]"><CloseIcon /></button>
                 </div>
                 {history.length > 0 && stats ? (
                     <div className="p-4 grid grid-cols-2 gap-4 border-b border-[rgb(var(--color-border))]">
                         <div className="bg-[rgb(var(--color-input))] p-4 rounded-lg text-center">
-                            <p className="text-sm text-[rgb(var(--color-text-secondary))]">Total Quizzes</p>
+                            <p className="text-sm text-[rgb(var(--color-text-secondary))]">{t('total_quizzes')}</p>
                             <p className="text-2xl font-bold">{stats.totalQuizzes}</p>
                         </div>
                         <div className="bg-[rgb(var(--color-input))] p-4 rounded-lg text-center">
-                            <p className="text-sm text-[rgb(var(--color-text-secondary))]">Average Score</p>
+                            <p className="text-sm text-[rgb(var(--color-text-secondary))]">{t('average_score')}</p>
                             <p className="text-2xl font-bold">{stats.avgScore}%</p>
                         </div>
                     </div>
@@ -400,7 +405,7 @@ const QuizHistoryPanel: React.FC<{history: QuizResult[], onReview: (result: Quiz
                                     </div>
                                     <div className="flex items-center gap-4">
                                         <p className="font-bold text-lg">{result.score}/{result.totalQuestions}</p>
-                                        <button onClick={() => onReview(result)} className="px-3 py-1 bg-[rgb(var(--color-primary))] text-white text-sm rounded-md hover:bg-[rgb(var(--color-primary-hover))]">Review</button>
+                                        <button onClick={() => onReview(result)} className="px-3 py-1 bg-[rgb(var(--color-primary))] text-white text-sm rounded-md hover:bg-[rgb(var(--color-primary-hover))]">{t('review')}</button>
                                     </div>
                                 </div>
                             ))}
@@ -408,7 +413,7 @@ const QuizHistoryPanel: React.FC<{history: QuizResult[], onReview: (result: Quiz
                     ) : (
                          <div className="text-center text-[rgb(var(--color-text-secondary))] py-16">
                             <ChartBarIcon className="mx-auto w-12 h-12 mb-4" />
-                            <p>No quiz history yet. Take a quiz to see your stats!</p>
+                            <p>{t('no_quiz_history')}</p>
                         </div>
                     )}
                 </div>
@@ -419,3 +424,4 @@ const QuizHistoryPanel: React.FC<{history: QuizResult[], onReview: (result: Quiz
 
 
 export default QuizGenerator;
+

@@ -30,7 +30,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     
     const [theme, setThemeState] = useLocalStorage<Theme>('easyway-theme', 'default');
-    const [profile, setProfile] = useLocalStorage<UserProfile>('easyway-profile', { name: '', email: '', country: '' });
+    const [profile, setProfile] = useLocalStorage<UserProfile>('easyway-profile', { name: '', email: '', country: '', state: '', district: '' });
     const [apiKeys, setApiKeys] = useLocalStorage<ApiKeys>('easyway-apikeys', { openai: '', perplexity: '' });
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useLocalStorage<boolean>('easyway-sidebar-collapsed', false);
 

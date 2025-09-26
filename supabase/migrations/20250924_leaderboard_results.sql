@@ -33,5 +33,34 @@ language sql security definer set search_path = public as $$
   order by a.submitted_at desc;
 $$;
 
+-- Update leaderboard function to include state and district
+create or replace function public.leaderboard(p_quiz_id uuid, p_limit int default 100)
+returns table(
+  rank int,
+  user_id uuid,
+  score int,
+  time_taken_seconds int,
+  submitted_at timestamptz,
+  state text,
+  district text
+)
+language sql security definer set search_path = public as $$
+  select
+    row_number() over (order by a.score desc nulls last, a.time_taken_seconds asc nulls last, a.submitted_at asc nulls last) as rank,
+    a.user_id,
+    a.score,
+    a.time_taken_seconds,
+    a.submitted_at,
+    coalesce(p.state, '') as state,
+    coalesce(p.district, '') as district
+  from public.competitive_quiz_attempts a
+  left join public.profiles p on a.user_id = p.user_id
+  where a.quiz_id = p_quiz_id
+    and a.submitted_at is not null
+  order by rank
+  limit p_limit;
+$$;
+
 -- Grant execute permission to authenticated users
 grant execute on function public.admin_get_all_user_results() to authenticated;
+grant execute on function public.leaderboard(uuid, int) to authenticated;

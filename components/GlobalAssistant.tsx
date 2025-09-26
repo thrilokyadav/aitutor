@@ -16,6 +16,7 @@ import { CloseIcon } from './icons/CloseIcon';
 import MarkdownRenderer from './common/MarkdownRenderer';
 import useLocalStorage from '../hooks/useLocalStorage';
 import { useAuth } from '../contexts/AuthContext';
+import { useI18n } from '../contexts/I18nContext';
 import { supabase, SUPABASE_ENABLED } from '../services/supabaseClient';
 
 const SESSIONS_KEY = 'easyway-tutor-global-assistant-sessions';
@@ -28,9 +29,10 @@ const GlobalAssistant: React.FC = () => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
-  
-  const { activeView, activeSubject, apiKeys, setActiveView, setExplainerPrefillTopic } = useAppContext() as any;
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const { user, signInWithGoogle } = useAuth();
+  const { lang } = useI18n();
+  const { activeView, activeSubject, apiKeys, setActiveView, setExplainerPrefillTopic } = useAppContext() as any;
   const geminiService = useMemo(() => new GeminiService(), []);
   const openAiService = useMemo(() => apiKeys.openai ? new OpenAiService(apiKeys.openai) : null, [apiKeys.openai]);
 
@@ -153,7 +155,33 @@ const GlobalAssistant: React.FC = () => {
     }
   };
 
+  const scrollToTop = () => {
+    const el = messagesListRef.current;
+    if (el) {
+      requestAnimationFrame(() => {
+        el.scrollTop = 0;
+      });
+    }
+  };
+
+  const handleScroll = () => {
+    const el = messagesListRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 10;
+    // Show button whenever not at (or very near) the bottom
+    setShowScrollButton(!isNearBottom);
+  };
+
   useEffect(scrollToBottom, [activeSession?.messages]);
+
+  useEffect(() => {
+    const el = messagesListRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', handleScroll);
+    // Initialize button state on mount/update
+    handleScroll();
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, [activeSession?.messages]);
   
   const updateSession = (sessionId: string, updateFn: (session: ChatSession) => ChatSession) => {
     setSessions(prev => prev.map(s => s.id === sessionId ? updateFn(s) : s));
@@ -271,9 +299,10 @@ const GlobalAssistant: React.FC = () => {
       const instruction = "You are a helpful AI assistant for a user studying for ALL GOV exams. The user will provide you with their current context (what they are looking at in the app). Use this context to provide relevant and concise help. Be friendly and supportive.";
 
       if (currentModel.startsWith('gpt')) {
-        responseStream = openAiService!.sendMessageStream(currentModel, activeSession.messages, instruction, fullInput);
+        const langPrefix = lang === 'kn' ? 'IMPORTANT: Respond in Kannada (kn-IN) language.\n' : '';
+        responseStream = openAiService!.sendMessageStream(currentModel, activeSession.messages, instruction + (lang === 'kn' ? '\n' + langPrefix : ''), langPrefix + fullInput);
       } else {
-        const chat = geminiService.getGlobalAssistantChat(activeSession.messages);
+        const chat = geminiService.getGlobalAssistantChat(activeSession.messages, lang);
         responseStream = await chat.sendMessageStream({ message: fullInput });
       }
       // Watchdog to avoid indefinite buffering
@@ -540,7 +569,7 @@ const GlobalAssistant: React.FC = () => {
                   <PlusIcon className="w-4 h-4"/> New
                 </button>
               </div>
-              <div className="flex flex-col flex-1 p-3">
+              <div className="relative flex flex-col flex-1 p-3">
                 <div ref={messagesListRef} className="flex-1 overflow-y-auto global-assistant-scrollbar" style={{ contain: 'content' as any }}>
                   {(!activeSession || activeSession.messages.length === 0) ? (
                     <div className="flex flex-col items-center justify-center h-full text-[rgb(var(--color-text-secondary))] text-center px-4">
@@ -562,6 +591,21 @@ const GlobalAssistant: React.FC = () => {
                     })
                   )}
                 </div>
+
+                {/* Scroll Button */}
+                {showScrollButton && (
+                  <div className="absolute bottom-24 right-4 z-20">
+                    <button
+                      onClick={scrollToBottom}
+                      className={`w-12 h-12 bg-[rgb(var(--color-primary))] text-white rounded-full shadow-xl hover:bg-[rgb(var(--color-primary-hover))] transition-colors flex items-center justify-center ${isLoading ? 'animate-pulse' : ''}`}
+                      title="Scroll to bottom"
+                      aria-label="Scroll to bottom"
+                    >
+                      <span className="text-xl">▾</span>
+                    </button>
+                  </div>
+                )}
+
                 <div className="mt-2" ref={messagesEndRef}>
                   <div className="flex items-center bg-[rgb(var(--color-input))] rounded-lg p-1 border border-[rgb(var(--color-border))] focus-within:ring-2 focus-within:ring-[rgb(var(--color-primary))] gap-1">
                     <select

@@ -4,6 +4,7 @@ import { supabase, SUPABASE_ENABLED } from '../../services/supabaseClient';
 import Card from '../common/Card';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import GeminiService from '../../services/geminiService';
+import { useI18n } from '../../contexts/I18nContext';
 
 interface UserRow {
   id: string;
@@ -67,6 +68,7 @@ interface NewQuestion {
 const AdminView: React.FC = () => {
   const { user } = useAuth();
   const isAdmin = (user?.email || '').toLowerCase() === 'info.edensnews@gmail.com';
+  const { lang, t } = useI18n();
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +81,20 @@ const AdminView: React.FC = () => {
   const [resultsFilter, setResultsFilter] = useState<'all' | 'recent' | 'top_scores'>('all');
   const [expandedResult, setExpandedResult] = useState<string | null>(null);
   const [attemptDetails, setAttemptDetails] = useState<AttemptDetail[]>([]);
+  // Leaderboard per-quiz view
+  const [lbQuiz, setLbQuiz] = useState<QuizRow | null>(null);
+  const [lbRows, setLbRows] = useState<Array<{
+    rank: number;
+    user_id: string;
+    user_email?: string;
+    state?: string | null;
+    district?: string | null;
+    score: number | null;
+    accuracy?: number | null;
+    time_taken_seconds: number | null;
+    submitted_at: string | null;
+  }> | null>(null);
+  const [lbLoading, setLbLoading] = useState(false);
 
   // Create quiz form state
   const [title, setTitle] = useState('');
@@ -132,6 +148,51 @@ const AdminView: React.FC = () => {
     if (error) setError(error.message);
     setAttemptDetails(Array.isArray(data) ? data as AttemptDetail[] : []);
     setLoading(false);
+  }, []);
+
+  const openQuizLeaderboard = useCallback(async (quiz: QuizRow) => {
+    if (!SUPABASE_ENABLED) return;
+    setLbLoading(true);
+    setError(null);
+    setLbQuiz(quiz);
+    try {
+      // Fetch core leaderboard (rank, user_id, score, time, submitted_at, state, district)
+      const { data: core, error: coreErr } = await supabase.rpc('leaderboard', { p_quiz_id: quiz.id, p_limit: 1000 });
+      if (coreErr) throw coreErr;
+      const coreRows = Array.isArray(core) ? core as any[] : [];
+
+      // Fetch admin results for emails and accuracy, filtered by quiz
+      const { data: allRes, error: resErr } = await supabase.rpc('admin_get_all_user_results');
+      if (resErr) throw resErr;
+      const filtered = (Array.isArray(allRes) ? allRes as any[] : []).filter(r => r.quiz_id === quiz.id);
+      const byUserSubmitted = new Map<string, { user_email: string; accuracy: number | null }>();
+      filtered.forEach(r => {
+        const key = `${r.user_id}-${r.submitted_at}`;
+        byUserSubmitted.set(key, { user_email: r.user_email, accuracy: r.accuracy });
+      });
+
+      const merged = coreRows.map(r => {
+        const key = `${r.user_id}-${r.submitted_at}`;
+        const extra = byUserSubmitted.get(key);
+        return {
+          rank: r.rank,
+          user_id: r.user_id,
+          user_email: extra?.user_email,
+          state: r.state ?? null,
+          district: r.district ?? null,
+          score: r.score ?? null,
+          accuracy: extra?.accuracy ?? null,
+          time_taken_seconds: r.time_taken_seconds ?? null,
+          submitted_at: r.submitted_at ?? null,
+        };
+      });
+      setLbRows(merged);
+    } catch (e: any) {
+      setLbRows([]);
+      setError(e.message || 'Failed to load leaderboard');
+    } finally {
+      setLbLoading(false);
+    }
   }, []);
 
   const handleExpandResult = useCallback(async (result: UserResult) => {
@@ -254,8 +315,8 @@ const AdminView: React.FC = () => {
       setLoading(true);
       setError(null);
       // Use subject test generator; include focus in prompt by appending
-      const topic = quizFocus ? `${subject} — Focus: ${quizFocus}` : subject;
-      const qs = await gemini.generateSubjectQuiz(topic, genCount, genDifficulty);
+      const topic = quizFocus ? `${subject} â€” Focus: ${quizFocus}` : subject;
+      const qs = await gemini.generateSubjectQuiz(topic, genCount, genDifficulty, lang);
       const mapped = qs.map(q => ({
         question: q.question,
         options: q.options,
@@ -296,27 +357,27 @@ const AdminView: React.FC = () => {
   return (
     <div className="p-3 sm:p-4 lg:p-6 space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <h2 className="text-lg sm:text-xl font-semibold">Admin — Competitive Quizzes</h2>
+        <h2 className="text-lg sm:text-xl font-semibold">{t('admin_title')}</h2>
         <div className="flex items-center gap-2 text-sm text-[rgb(var(--color-text-secondary))]">
           {loading && <LoadingSpinner />}
-          <span>{loading ? 'Working…' : 'Ready'}</span>
+          <span>{loading ? t('working') : t('ready')}</span>
         </div>
       </div>
       {error && <div className="p-3 rounded bg-red-900/30 border border-red-800 text-red-200 text-sm">{error}</div>}
 
       <Card>
-        <h3 className="font-semibold mb-3 text-base sm:text-lg">Create Quiz</h3>
+        <h3 className="font-semibold mb-3 text-base sm:text-lg">{t('create_quiz')}</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <input className="bg-[rgb(var(--color-input))] p-3 sm:p-2 rounded border border-[rgb(var(--color-border))] text-sm sm:text-base w-full" placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} />
-          <input className="bg-[rgb(var(--color-input))] p-3 sm:p-2 rounded border border-[rgb(var(--color-border))] text-sm sm:text-base w-full" placeholder="Subject" value={subject} onChange={e => setSubject(e.target.value)} />
-          <input className="bg-[rgb(var(--color-input))] p-3 sm:p-2 rounded border border-[rgb(var(--color-border))] text-sm sm:text-base w-full sm:col-span-2" placeholder="Description (optional)" value={description} onChange={e => setDescription(e.target.value)} />
-          <input className="bg-[rgb(var(--color-input))] p-3 sm:p-2 rounded border border-[rgb(var(--color-border))] text-sm sm:text-base w-full sm:col-span-2" placeholder="Focus (how the quiz should be focused)" value={quizFocus} onChange={e => setQuizFocus(e.target.value)} />
+          <input className="bg-[rgb(var(--color-input))] p-3 sm:p-2 rounded border border-[rgb(var(--color-border))] text-sm sm:text-base w-full" placeholder={t('title')} value={title} onChange={e => setTitle(e.target.value)} />
+          <input className="bg-[rgb(var(--color-input))] p-3 sm:p-2 rounded border border-[rgb(var(--color-border))] text-sm sm:text-base w-full" placeholder={t('subject')} value={subject} onChange={e => setSubject(e.target.value)} />
+          <input className="bg-[rgb(var(--color-input))] p-3 sm:p-2 rounded border border-[rgb(var(--color-border))] text-sm sm:text-base w-full sm:col-span-2" placeholder={t('description_optional')} value={description} onChange={e => setDescription(e.target.value)} />
+          <input className="bg-[rgb(var(--color-input))] p-3 sm:p-2 rounded border border-[rgb(var(--color-border))] text-sm sm:text-base w-full sm:col-span-2" placeholder={t('focus_hint')} value={quizFocus} onChange={e => setQuizFocus(e.target.value)} />
           <input className="bg-[rgb(var(--color-input))] p-3 sm:p-2 rounded border border-[rgb(var(--color-border))] text-sm sm:text-base w-full" type="datetime-local" value={startAt} onChange={e => setStartAt(e.target.value)} />
-          <input className="bg-[rgb(var(--color-input))] p-3 sm:p-2 rounded border border-[rgb(var(--color-border))] text-sm sm:text-base w-full" type="number" min={60} step={30} value={duration} onChange={e => setDuration(parseInt(e.target.value || '600', 10))} placeholder="Duration seconds" />
+          <input className="bg-[rgb(var(--color-input))] p-3 sm:p-2 rounded border border-[rgb(var(--color-border))] text-sm sm:text-base w-full" type="number" min={60} step={30} value={duration} onChange={e => setDuration(parseInt(e.target.value || '600', 10))} placeholder={t('duration_seconds')} />
         </div>
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <div className="sm:col-span-2 lg:col-span-1">
-            <label className="block text-sm mb-2 text-[rgb(var(--color-text-secondary))]">Auto-generate</label>
+            <label className="block text-sm mb-2 text-[rgb(var(--color-text-secondary))]">{t('auto_generate')}</label>
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
               <input
                 className="bg-[rgb(var(--color-input))] p-3 sm:p-2 rounded border border-[rgb(var(--color-border))] w-full sm:w-20 text-sm sm:text-base"
@@ -345,7 +406,7 @@ const AdminView: React.FC = () => {
           </div>
         </div>
         <div className="mt-4 space-y-3">
-          <div className="text-sm sm:text-base font-semibold">Questions</div>
+          <div className="text-sm sm:text-base font-semibold">{t('questions')}</div>
           {questions.map((q, idx) => (
             <div key={idx} className="p-3 sm:p-4 rounded border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))]/50">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-2">
@@ -378,7 +439,7 @@ const AdminView: React.FC = () => {
               </div>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
                 <div className="flex items-center gap-2">
-                  <label className="text-sm">Correct index</label>
+                  <label className="text-sm">{t('correct_index')}</label>
                   <select
                     className="bg-[rgb(var(--color-input))] p-2 sm:p-1 rounded border border-[rgb(var(--color-border))] text-sm sm:text-base min-h-[44px] sm:min-h-0"
                     value={q.correct_index}
@@ -391,7 +452,7 @@ const AdminView: React.FC = () => {
                   </select>
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-sm">Points</label>
+                  <label className="text-sm">{t('points')}</label>
                   <input
                     className="bg-[rgb(var(--color-input))] p-2 sm:p-1 rounded border border-[rgb(var(--color-border))] w-20 sm:w-16 text-sm sm:text-base min-h-[44px] sm:min-h-0"
                     type="number"
@@ -420,18 +481,98 @@ const AdminView: React.FC = () => {
         </div>
       </Card>
 
+      {/* Leaderboards Section (top-level) */}
       <Card>
-        <h3 className="font-semibold mb-3 text-base sm:text-lg">Manage Quizzes</h3>
+        <h3 className="font-semibold mb-3 text-base sm:text-lg">{t('leaderboards')}</h3>
         {quizzes.length === 0 ? (
-          <div className="text-[rgb(var(--color-text-secondary))] text-sm sm:text-base">No quizzes yet.</div>
+          <div className="text-[rgb(var(--color-text-secondary))] text-sm sm:text-base">{t('no_quizzes_yet')}</div>
+        ) : (
+          <div className="space-y-2">
+            {quizzes.map(q => (
+              <div key={q.id} className="p-3 rounded border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))]/40 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-semibold truncate text-sm sm:text-base">{q.title} â€” {q.subject}</div>
+                  <div className="text-xs sm:text-sm text-[rgb(var(--color-text-secondary))]">
+                    {new Date(q.start_at).toLocaleString()} â€¢ {q.published_leaderboard ? 'Published' : 'Unpublished'}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="px-3 py-2 text-xs sm:text-sm rounded bg-[rgb(var(--color-primary))] text-white hover:bg-[rgb(var(--color-primary-hover))]"
+                    onClick={() => openQuizLeaderboard(q)}
+                  >
+                    View Leaderboard
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Per-Quiz Leaderboard Panel */}
+      {lbQuiz && (
+        <Card>
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold">Leaderboard â€” {lbQuiz.title}</h3>
+            <button
+              className="px-2 py-1 text-xs rounded bg-[rgb(var(--color-input))] hover:bg-[rgb(var(--color-input-hover))]"
+              onClick={() => { setLbQuiz(null); setLbRows(null); }}
+            >
+              Close
+            </button>
+          </div>
+          {lbLoading ? (
+            <div className="flex items-center gap-2 mt-2"><LoadingSpinner /> {t('loading')}â€¦</div>
+          ) : !lbRows || lbRows.length === 0 ? (
+            <p className="text-sm text-[rgb(var(--color-text-secondary))] mt-2">{t('no_leaderboard')}</p>
+          ) : (
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-[rgb(var(--color-text-secondary))]">
+                    <th className="py-2">Rank</th>
+                    <th>User</th>
+                    <th>State</th>
+                    <th>District</th>
+                    <th>Score</th>
+                    <th>Accuracy</th>
+                    <th>Time (s)</th>
+                    <th>Submitted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lbRows.map((r, idx) => (
+                    <tr key={idx} className="border-t border-[rgb(var(--color-border))]">
+                      <td className="py-2">{r.rank}</td>
+                      <td className="truncate max-w-[220px]">{r.user_email || r.user_id}</td>
+                      <td className="truncate max-w-[120px]">{r.state || '-'}</td>
+                      <td className="truncate max-w-[120px]">{r.district || '-'}</td>
+                      <td>{r.score ?? '-'}</td>
+                      <td>{r.accuracy != null ? `${r.accuracy.toFixed?.(1) ?? r.accuracy}%` : '-'}</td>
+                      <td>{r.time_taken_seconds ?? '-'}</td>
+                      <td>{r.submitted_at ? new Date(r.submitted_at).toLocaleString() : '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      <Card>
+        <h3 className="font-semibold mb-3 text-base sm:text-lg">{t('manage_quizzes')}</h3>
+        {quizzes.length === 0 ? (
+          <div className="text-[rgb(var(--color-text-secondary))] text-sm sm:text-base">{t('no_quizzes_yet')}</div>
         ) : (
           <div className="space-y-2 sm:space-y-3">
             {quizzes.map(q => (
               <div key={q.id} className="p-3 sm:p-4 rounded border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))]/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold truncate text-sm sm:text-base">{q.title} — {q.subject}</div>
+                  <div className="font-semibold truncate text-sm sm:text-base">{q.title} â€” {q.subject}</div>
                   <div className="text-xs sm:text-sm text-[rgb(var(--color-text-secondary))]">
-                    {new Date(q.start_at).toLocaleString()} → {new Date(q.end_at).toLocaleString()} • Duration {q.duration_seconds}s
+                    {new Date(q.start_at).toLocaleString()} â†’ {new Date(q.end_at).toLocaleString()} â€¢ Duration {q.duration_seconds}s
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -440,6 +581,12 @@ const AdminView: React.FC = () => {
                     onClick={() => togglePublishLeaderboard(q)}
                   >
                     {q.published_leaderboard ? 'Unpublish' : 'Publish'}
+                  </button>
+                  <button
+                    className="px-3 py-2 text-xs sm:text-sm rounded bg-[rgb(var(--color-primary))] text-white hover:bg-[rgb(var(--color-primary-hover))] min-h-[44px] sm:min-h-0 whitespace-nowrap"
+                    onClick={() => openQuizLeaderboard(q)}
+                  >
+                    View Leaderboard
                   </button>
                 </div>
               </div>
@@ -450,7 +597,7 @@ const AdminView: React.FC = () => {
 
       <Card>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-2">
-          <h3 className="font-semibold text-base sm:text-lg">User Management</h3>
+          <h3 className="font-semibold text-base sm:text-lg">{t('user_management')}</h3>
           <button
             className="px-4 py-2 text-sm rounded bg-[rgb(var(--color-input))] hover:bg-[rgb(var(--color-input-hover))] min-h-[44px] sm:min-h-0 self-start sm:self-auto"
             onClick={fetchUsers}
@@ -464,7 +611,7 @@ const AdminView: React.FC = () => {
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
             <input
               className="flex-1 bg-[rgb(var(--color-input))] p-3 sm:p-2 rounded border border-[rgb(var(--color-border))] text-sm sm:text-base w-full"
-              placeholder="Search users by email..."
+              placeholder={t('search_users_placeholder')}
               value={userSearch}
               onChange={e => setUserSearch(e.target.value)}
             />
@@ -484,7 +631,7 @@ const AdminView: React.FC = () => {
         </div>
 
         {filteredUsers.length === 0 ? (
-          <div className="text-[rgb(var(--color-text-secondary))] text-sm sm:text-base">No users found.</div>
+          <div className="text-[rgb(var(--color-text-secondary))] text-sm sm:text-base">{t('no_users_found')}</div>
         ) : (
           <div className="space-y-3 max-h-96 overflow-y-auto">
             {filteredUsers.map(user => (
@@ -516,7 +663,7 @@ const AdminView: React.FC = () => {
 
       <Card>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-2">
-          <h3 className="font-semibold text-base sm:text-lg">User Results & Leaderboards</h3>
+          <h3 className="font-semibold text-base sm:text-lg">{t('user_results_and_leaderboards')}</h3>
           <button
             className="px-4 py-2 text-sm rounded bg-[rgb(var(--color-input))] hover:bg-[rgb(var(--color-input-hover))] min-h-[44px] sm:min-h-0 self-start sm:self-auto"
             onClick={fetchUserResults}
@@ -530,7 +677,7 @@ const AdminView: React.FC = () => {
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
             <input
               className="flex-1 bg-[rgb(var(--color-input))] p-3 sm:p-2 rounded border border-[rgb(var(--color-border))] text-sm sm:text-base w-full"
-              placeholder="Search results by user email, quiz title, or subject..."
+              placeholder={t('search_results_placeholder')}
               value={resultsSearch}
               onChange={e => setResultsSearch(e.target.value)}
             />
@@ -539,9 +686,9 @@ const AdminView: React.FC = () => {
               value={resultsFilter}
               onChange={e => setResultsFilter(e.target.value as 'all' | 'recent' | 'top_scores')}
             >
-              <option value="all">All Results</option>
-              <option value="recent">Most Recent</option>
-              <option value="top_scores">Top Scores</option>
+              <option value="all">{t('all_results')}</option>
+              <option value="recent">{t('most_recent')}</option>
+              <option value="top_scores">{t('top_scores')}</option>
             </select>
           </div>
           <div className="text-sm text-[rgb(var(--color-text-secondary))]">
@@ -550,7 +697,7 @@ const AdminView: React.FC = () => {
         </div>
 
         {filteredResults.length === 0 ? (
-          <div className="text-[rgb(var(--color-text-secondary))] text-sm sm:text-base">No results found.</div>
+          <div className="text-[rgb(var(--color-text-secondary))] text-sm sm:text-base">{t('no_results_found')}</div>
         ) : (
           <div className="space-y-3 max-h-96 overflow-y-auto">
             {filteredResults.map((result, idx) => {
@@ -578,7 +725,7 @@ const AdminView: React.FC = () => {
                           </div>
                         </div>
                         <div className="text-xs sm:text-sm text-[rgb(var(--color-text-secondary))] space-y-1">
-                          <div className="font-medium">{result.quiz_title} — {result.quiz_subject}</div>
+                          <div className="font-medium">{result.quiz_title} â€” {result.quiz_subject}</div>
                           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
                             <span className="font-medium">Score: <span className="text-[rgb(var(--color-primary))]">{result.score}</span></span>
                             <span className="font-medium">Accuracy: <span className="text-[rgb(var(--color-primary))]">{result.accuracy.toFixed(1)}%</span></span>
@@ -588,7 +735,7 @@ const AdminView: React.FC = () => {
                         </div>
                       </div>
                       <div className="text-xs sm:text-sm text-[rgb(var(--color-text-secondary))] self-start sm:self-center">
-                        {isExpanded ? '▼ Hide Details' : '▶ Show Details'}
+                        {isExpanded ? 'â–¼ Hide Details' : 'â–¶ Show Details'}
                       </div>
                     </div>
                   </div>
@@ -599,7 +746,7 @@ const AdminView: React.FC = () => {
                       {loading ? (
                         <div className="flex items-center gap-2 text-sm text-[rgb(var(--color-text-secondary))]">
                           <LoadingSpinner />
-                          Loading detailed results...
+                          {t('loading')} detailed results...
                         </div>
                       ) : attemptDetails.length === 0 ? (
                         <div className="text-sm text-[rgb(var(--color-text-secondary))]">
@@ -621,7 +768,7 @@ const AdminView: React.FC = () => {
                                   <div className={`px-2 py-1 text-xs rounded ${
                                     detail.is_correct ? 'bg-green-900/30 text-green-200' : 'bg-red-900/30 text-red-200'
                                   }`}>
-                                    {detail.is_correct ? '✓ Correct' : '✗ Incorrect'}
+                                    {detail.is_correct ? 'âœ“ Correct' : 'âœ— Incorrect'}
                                   </div>
                                   <div className="text-sm font-medium">
                                     {detail.points_earned}/{detail.user_options[detail.correct_index]?.length ? 1 : 0} pts
@@ -652,7 +799,7 @@ const AdminView: React.FC = () => {
                                         {option}
                                       </span>
                                       {optIdx === detail.correct_index && (
-                                        <span className="text-xs text-green-300">✓ Correct Answer</span>
+                                        <span className="text-xs text-green-300">âœ“ Correct Answer</span>
                                       )}
                                       {optIdx === detail.user_chosen_index && !detail.is_correct && (
                                         <span className="text-xs text-red-300">Your Choice</span>
@@ -700,3 +847,4 @@ const AdminView: React.FC = () => {
 };
 
 export default AdminView;
+

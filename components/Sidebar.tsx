@@ -14,6 +14,7 @@ import UserProfile from './layout/UserProfile';
 import { ChevronDoubleLeftIcon } from './icons/ChevronDoubleLeftIcon';
 import { ChevronDoubleRightIcon } from './icons/ChevronDoubleRightIcon';
 import { useAuth } from '../contexts/AuthContext';
+import { useI18n } from '../contexts/I18nContext';
 
 interface NavItemProps {
   icon: React.ReactNode;
@@ -51,18 +52,19 @@ const NavItem: React.FC<NavItemProps> = ({ icon, label, isActive, isCollapsed, o
 
 const Sidebar: React.FC = () => {
   const { activeView, setActiveView, isSidebarCollapsed, setIsSidebarCollapsed } = useAppContext();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
+  const { lang, setLang, t } = useI18n();
   const navItems = [
-    { view: ActiveView.DASHBOARD, label: 'Dashboard', icon: <ChartBarIcon /> },
-    { view: ActiveView.TUTOR, label: 'AI Tutor', icon: <ChatIcon /> },
-    { view: ActiveView.SUBJECTS, label: 'Subjects', icon: <SubjectsIcon /> },
-    { view: ActiveView.EXPLAINER, label: 'Topic Explainer', icon: <BookIcon /> },
-    { view: ActiveView.QUIZ, label: 'Quiz Generator', icon: <QuizIcon /> },
-    { view: ActiveView.COMPETITION, label: 'Competitive', icon: <QuizIcon /> },
-    { view: ActiveView.NEWS, label: 'Current Affairs', icon: <NewsIcon /> },
-    { view: ActiveView.PLANNER, label: 'Planner', icon: <PlannerIcon /> },
-    { view: ActiveView.NOTES, label: 'Notes', icon: <DocumentTextIcon /> },
-    { view: ActiveView.HELP, label: 'Help', icon: <DocumentTextIcon /> },
+    { view: ActiveView.DASHBOARD, label: t('menu_dashboard'), icon: <ChartBarIcon /> },
+    { view: ActiveView.TUTOR, label: t('menu_ai_tutor'), icon: <ChatIcon /> },
+    { view: ActiveView.SUBJECTS, label: t('menu_subjects'), icon: <SubjectsIcon /> },
+    { view: ActiveView.EXPLAINER, label: t('menu_topic_explainer'), icon: <BookIcon /> },
+    { view: ActiveView.QUIZ, label: t('menu_quiz_generator'), icon: <QuizIcon /> },
+    { view: ActiveView.COMPETITION, label: t('menu_competitive'), icon: <QuizIcon /> },
+    { view: ActiveView.NEWS, label: t('menu_current_affairs'), icon: <NewsIcon /> },
+    { view: ActiveView.PLANNER, label: t('menu_planner'), icon: <PlannerIcon /> },
+    { view: ActiveView.NOTES, label: t('menu_notes'), icon: <DocumentTextIcon /> },
+    { view: ActiveView.HELP, label: t('menu_help'), icon: <DocumentTextIcon /> },
   ];
 
   return (
@@ -92,7 +94,7 @@ const Sidebar: React.FC = () => {
           <NavItem
             key={ActiveView.ADMIN}
             icon={<ChartBarIcon />}
-            label="Admin"
+            label={t('menu_admin')}
             view={ActiveView.ADMIN}
             isActive={activeView === ActiveView.ADMIN}
             isCollapsed={isSidebarCollapsed}
@@ -109,6 +111,21 @@ const Sidebar: React.FC = () => {
           {isSidebarCollapsed ? <ChevronDoubleRightIcon /> : <ChevronDoubleLeftIcon />}
         </button>
         <UserProfile isCollapsed={isSidebarCollapsed} />
+        {/* Language toggle */}
+        <div className={`flex ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} items-center gap-2`}>
+          {!isSidebarCollapsed && <span className="text-xs text-[rgb(var(--color-text-secondary))]">{t('language')}</span>}
+          <div className="flex items-center gap-1">
+            <button onClick={() => setLang('en')} className={`px-2 py-1 text-xs rounded ${lang === 'en' ? 'bg-[rgb(var(--color-primary))] text-white' : 'bg-[rgb(var(--color-input))] text-[rgb(var(--color-text-primary))]'}`}>EN</button>
+            <button onClick={() => setLang('kn')} className={`px-2 py-1 text-xs rounded ${lang === 'kn' ? 'bg-[rgb(var(--color-primary))] text-white' : 'bg-[rgb(var(--color-input))] text-[rgb(var(--color-text-primary))]'}`}>KN</button>
+          </div>
+        </div>
+        {/* Logout */}
+        <button
+          onClick={signOut}
+          className="w-full px-3 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm"
+        >
+          {t('logout')}
+        </button>
         <div className={`text-xs text-slate-500 text-center transition-opacity duration-300 ${isSidebarCollapsed ? 'opacity-0' : 'opacity-100'}`}>
           <p>&copy; 2024 AI Learning Platform</p>
         </div>

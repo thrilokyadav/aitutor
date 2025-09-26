@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../services/supabaseClient';
 import MarkdownRenderer from '../common/MarkdownRenderer';
+import { useI18n } from '../../contexts/I18nContext';
 
 interface Note {
   id: string;
@@ -14,9 +15,13 @@ interface Note {
 
 const NotesView: React.FC = () => {
   const { user, loading, signInWithGoogle } = useAuth();
+  const { t } = useI18n();
   const [notes, setNotes] = useState<Note[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
   const [selected, setSelected] = useState<Note | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newNoteTitle, setNewNoteTitle] = useState('');
+  const [newNoteContent, setNewNoteContent] = useState('');
 
   useEffect(() => {
     const fetchNotes = async () => {
@@ -32,13 +37,48 @@ const NotesView: React.FC = () => {
     fetchNotes();
   }, [user]);
 
-  if (loading) return <div className="p-6">Loading...</div>;
+  const handleCreateNote = () => {
+    setIsCreating(true);
+    setNewNoteTitle('');
+    setNewNoteContent('');
+  };
+
+  const handleSaveNote = async () => {
+    if (!newNoteTitle.trim() || !user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('notes')
+        .insert({
+          title: newNoteTitle.trim(),
+          content: newNoteContent.trim(),
+          source: 'manual',
+        })
+        .select()
+        .single();
+
+      if (!error && data) {
+        setNotes(prev => [data, ...prev]);
+        setIsCreating(false);
+        setNewNoteTitle('');
+        setNewNoteContent('');
+      }
+    } catch (error) {
+      console.error('Error saving note:', error);
+    }
+  };
+
+  const handleCancelCreate = () => {
+    setIsCreating(false);
+    setNewNoteTitle('');
+    setNewNoteContent('');
+  };
   if (!user) {
     return (
       <div className="p-6 space-y-4">
-        <h2 className="text-xl font-semibold">Notes</h2>
-        <p className="text-[rgb(var(--color-text-secondary))]">Sign in to manage your notes.</p>
-        <button onClick={signInWithGoogle} className="px-4 py-2 rounded-md bg-[rgb(var(--color-primary))] text-white">Sign in with Google</button>
+        <h2 className="text-xl font-semibold">{t('notes')}</h2>
+        <p className="text-[rgb(var(--color-text-secondary))]">{t('sign_in_notes')}</p>
+        <button onClick={signInWithGoogle} className="px-4 py-2 rounded-md bg-[rgb(var(--color-primary))] text-white">{t('sign_in_with_google')}</button>
       </div>
     );
   }
@@ -46,15 +86,20 @@ const NotesView: React.FC = () => {
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Notes</h2>
+        <h2 className="text-xl font-semibold">{t('notes')}</h2>
         {/* Placeholder for Add Note (manual) */}
-        <button className="px-3 py-2 text-sm rounded-md border border-[rgb(var(--color-border))] bg-[rgb(var(--color-input))] text-white">New Note</button>
+        <button
+          onClick={handleCreateNote}
+          className="px-3 py-2 text-sm rounded-md border border-[rgb(var(--color-border))] bg-[rgb(var(--color-primary))] text-white hover:bg-[rgb(var(--color-primary-hover))] transition-colors"
+        >
+          {t('new_note')}
+        </button>
       </div>
 
       {loadingNotes ? (
-        <div>Loading notes…</div>
+        <div>{t('loading_notes')}</div>
       ) : notes.length === 0 ? (
-        <div className="text-[rgb(var(--color-text-secondary))]">No notes yet. Save from Global Assistant or Topic Explainer.</div>
+        <div className="text-[rgb(var(--color-text-secondary))]">{t('no_notes_yet')}</div>
       ) : (
         <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
           {notes.map((n) => (
@@ -94,9 +139,51 @@ const NotesView: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Create Note Modal */}
+      {isCreating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={handleCancelCreate} />
+          <div className="relative z-10 w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-sidebar))] shadow-2xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[rgb(var(--color-border))]">
+              <h3 className="text-lg font-semibold">{t('create_new_note')}</h3>
+              <button onClick={handleCancelCreate} className="px-3 py-1.5 text-xs rounded-md bg-[rgb(var(--color-input))] hover:bg-slate-600">{t('cancel')}</button>
+            </div>
+            <div className="px-4 py-3 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">{t('title')}</label>
+                <input
+                  type="text"
+                  value={newNoteTitle}
+                  onChange={(e) => setNewNoteTitle(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-[rgb(var(--color-input))] border border-[rgb(var(--color-border))] text-[rgb(var(--color-text-primary))]"
+                  placeholder={t('enter_note_title')}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">{t('content')}</label>
+                <textarea
+                  value={newNoteContent}
+                  onChange={(e) => setNewNoteContent(e.target.value)}
+                  rows={10}
+                  className="w-full px-3 py-2 rounded-md bg-[rgb(var(--color-input))] border border-[rgb(var(--color-border))] text-[rgb(var(--color-text-primary))] resize-vertical"
+                  placeholder={t('enter_note_content')}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={handleSaveNote}
+                  disabled={!newNoteTitle.trim()}
+                  className="px-4 py-2 rounded-md bg-[rgb(var(--color-primary))] text-white hover:bg-[rgb(var(--color-primary-hover))] disabled:bg-slate-600 disabled:cursor-not-allowed"
+                >
+                  {t('save_note')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
-;
+};
 
 export default NotesView;

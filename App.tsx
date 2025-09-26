@@ -1,5 +1,4 @@
 import React from 'react';
-// FIX: Import Transition type to fix type inference issue for the `ease` property.
 import { motion, AnimatePresence, Transition } from 'framer-motion';
 import { ActiveView } from './types';
 import Sidebar from './components/Sidebar';
@@ -22,6 +21,7 @@ import OnboardingForm from './components/auth/OnboardingForm';
 import { useProfile } from './hooks/useProfile';
 import CompetitiveView from './components/competitive/CompetitiveView';
 import AdminView from './components/admin/AdminView';
+import { I18nProvider } from './contexts/I18nContext';
 
 const pageVariants = {
   initial: { opacity: 0, scale: 0.98 },
@@ -29,8 +29,6 @@ const pageVariants = {
   out: { opacity: 0, scale: 1.02 },
 };
 
-// FIX: Explicitly type `pageTransition` with the `Transition` type from framer-motion.
-// This ensures properties like `ease` are correctly validated against allowed string literal values.
 const pageTransition: Transition = {
   type: 'tween',
   ease: 'easeInOut',
@@ -72,44 +70,46 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-[rgb(var(--color-background-start))] text-[rgb(var(--color-text-primary))] font-sans overflow-hidden">
-      {authLoading ? (
-        <div className="flex-1 flex items-center justify-center">Loading...</div>
-      ) : !user ? (
-        <div className="flex-1">
-          <LoginScreen />
-        </div>
-      ) : profileLoading ? (
-        <div className="flex-1 flex items-center justify-center">Loading profile...</div>
-      ) : !profile ? (
-        <div className="flex-1">
-          <OnboardingForm onDone={() => window.location.reload()} />
-        </div>
-      ) : (
-        <>
-          <Sidebar />
-          <main className="flex-1 flex flex-col overflow-hidden relative">
-            <MainLayout>
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={activeView}
-                  initial="initial"
-                  animate="in"
-                  exit="out"
-                  variants={pageVariants}
-                  transition={pageTransition}
-                  className="h-full w-full"
-                >
-                  {renderActiveView()}
-                </motion.div>
-              </AnimatePresence>
-            </MainLayout>
-            <GlobalAssistant />
-          </main>
-          <SettingsModal />
-        </>
-      )}
-    </div>
+    <I18nProvider>
+      <div className="flex h-screen bg-[rgb(var(--color-background-start))] text-[rgb(var(--color-text-primary))] font-sans overflow-hidden">
+        {authLoading ? (
+          <div className="flex-1 flex items-center justify-center">Loading...</div>
+        ) : !user ? (
+          <div className="flex-1">
+            <LoginScreen />
+          </div>
+        ) : profileLoading ? (
+          <div className="flex-1 flex items-center justify-center">Loading profile...</div>
+        ) : !profile ? (
+          <div className="flex-1">
+            <OnboardingForm onDone={() => window.location.reload()} />
+          </div>
+        ) : (
+          <>
+            <Sidebar />
+            <main className="flex-1 flex flex-col overflow-hidden relative">
+              <MainLayout>
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={activeView}
+                    initial="initial"
+                    animate="in"
+                    exit="out"
+                    variants={pageVariants}
+                    transition={pageTransition}
+                    className="h-full w-full"
+                  >
+                    {renderActiveView()}
+                  </motion.div>
+                </AnimatePresence>
+              </MainLayout>
+              <GlobalAssistant />
+            </main>
+            <SettingsModal />
+          </>
+        )}
+      </div>
+    </I18nProvider>
   );
 };
 

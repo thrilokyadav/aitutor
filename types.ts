@@ -75,6 +75,8 @@ export interface UserProfile {
   name: string;
   email: string;
   country: string;
+  state?: string;
+  district?: string;
 }
 
 export interface ApiKeys {
@@ -119,4 +121,5 @@ export interface QuizResult {
     timestamp: number;
     questions: QuizQuestion[];
     userAnswers: (number | null)[];
+    userName?: string;
 }

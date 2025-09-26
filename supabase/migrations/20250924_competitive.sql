@@ -137,7 +137,7 @@ $$;
 
 -- RPC: leaderboard (visible when published or admin)
 create or replace function public.leaderboard(p_quiz_id uuid, p_limit int default 100)
-returns table(rank int, user_id uuid, score int, time_taken_seconds int, submitted_at timestamptz)
+returns table(rank int, user_id uuid, score int, time_taken_seconds int, submitted_at timestamptz, state text, district text)
 language sql security definer set search_path = public as $$
   with q as (
     select * from public.competitive_quizzes where id = p_quiz_id
@@ -148,8 +148,11 @@ language sql security definer set search_path = public as $$
          a.user_id,
          a.score,
          a.time_taken_seconds,
-         a.submitted_at
+         a.submitted_at,
+         coalesce(p.state, '') as state,
+         coalesce(p.district, '') as district
   from public.competitive_quiz_attempts a
+  left join public.profiles p on a.user_id = p.user_id
   where a.quiz_id = p_quiz_id and (select ok from can_view)
   order by 1
   limit greatest(1, coalesce(p_limit, 100));

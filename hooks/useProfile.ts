@@ -5,6 +5,8 @@ export interface UserProfile {
   user_id: string;
   full_name: string | null;
   study_goal: string | null;
+  state?: string | null;
+  district?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -38,6 +40,8 @@ export const useProfile = (userId: string | null) => {
       user_id: userId,
       full_name: values.full_name ?? null,
       study_goal: values.study_goal ?? null,
+      state: values.state ?? null,
+      district: values.district ?? null,
     };
     const { error } = await supabase
       .from('profiles')

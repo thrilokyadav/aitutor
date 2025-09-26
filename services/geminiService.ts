@@ -45,16 +45,18 @@ class GeminiService {
     return this.createChat(ALL_GOV_TUTOR_INSTRUCTION, history);
   }
 
-  getSubjectChat(subject: string, history: ChatMessage[]): Chat {
+  getSubjectChat(subject: string, history: ChatMessage[], lang: 'en' | 'kn' = 'en'): Chat {
     const instruction = `You are an expert tutor for ALL GOV examinations, specializing in the subject of ${subject}. Your responses must be accurate, detailed, and structured for easy learning. Use clear headings, bullet points, and provide examples where relevant. Maintain a formal and encouraging tone. When explaining concepts, break them down into simple parts. Focus strictly on ${subject}. ${BEAUTIFUL_OUTPUT_INSTRUCTION}`;
-    return this.createChat(instruction, history);
+    const langSuffix = lang === 'kn' ? '\nIMPORTANT: Respond in Kannada (kn-IN) language.' : '';
+    return this.createChat(instruction + langSuffix, history);
   }
   
-  getGlobalAssistantChat(history: ChatMessage[]): Chat {
-    return this.createChat(GLOBAL_ASSISTANT_INSTRUCTION, history);
+  getGlobalAssistantChat(history: ChatMessage[], lang: 'en' | 'kn' = 'en'): Chat {
+    const langSuffix = lang === 'kn' ? '\nIMPORTANT: Respond in Kannada (kn-IN) language.' : '';
+    return this.createChat(GLOBAL_ASSISTANT_INSTRUCTION + langSuffix, history);
   }
 
-  async explainTopic(topic: string, config: TopicExplainerConfig): Promise<string> {
+  async explainTopic(topic: string, config: TopicExplainerConfig, lang: 'en' | 'kn' = 'en'): Promise<string> {
     const prompt = `
       Provide a detailed explanation of the following topic for an ALL GOV aspirant: "${topic}".
       Tailor the explanation with the following parameters:
@@ -68,17 +70,18 @@ class GeminiService {
       model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
-        systemInstruction: ALL_GOV_TUTOR_INSTRUCTION
+        systemInstruction: ALL_GOV_TUTOR_INSTRUCTION + (lang === 'kn' ? '\nIMPORTANT: Respond in Kannada (kn-IN) language.' : '')
       }
     });
     return response.text;
   }
   
-  private async _generateQuiz(prompt: string): Promise<QuizQuestion[]> {
+  private async _generateQuiz(prompt: string, systemInstruction?: string): Promise<QuizQuestion[]> {
     const response = await this.ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
+        ...(systemInstruction ? { systemInstruction } : {}),
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -111,17 +114,19 @@ class GeminiService {
     }
   }
 
-  async generateQuiz(topic: string, numQuestions: number, difficulty: QuizDifficulty): Promise<QuizQuestion[]> {
+  async generateQuiz(topic: string, numQuestions: number, difficulty: QuizDifficulty, lang: 'en' | 'kn' = 'en'): Promise<QuizQuestion[]> {
     const prompt = `Generate a ${numQuestions}-question multiple-choice quiz on the ALL GOV topic: "${topic}". The difficulty level should be ${difficulty}. For each question, provide 4 options, the index of the correct answer, and a brief explanation for the correct answer in Markdown format.`;
-    return this._generateQuiz(prompt);
+    const sys = ALL_GOV_TUTOR_INSTRUCTION + (lang === 'kn' ? '\nIMPORTANT: Write all questions, options, and explanations in Kannada (kn-IN).' : '');
+    return this._generateQuiz(prompt, sys);
   }
 
-  async generateSubjectQuiz(subject: string, numQuestions: number, difficulty: QuizDifficulty): Promise<QuizQuestion[]> {
+  async generateSubjectQuiz(subject: string, numQuestions: number, difficulty: QuizDifficulty, lang: 'en' | 'kn' = 'en'): Promise<QuizQuestion[]> {
     const prompt = `Generate a ${numQuestions}-question multiple-choice quiz on the ALL GOV subject: "${subject}". The difficulty level should be ${difficulty}. The questions should cover a wide range of topics within the subject. For each question, provide 4 options, the index of the correct answer, and a brief explanation for the correct answer in Markdown format.`;
-    return this._generateQuiz(prompt);
+    const sys = ALL_GOV_TUTOR_INSTRUCTION + (lang === 'kn' ? '\nIMPORTANT: Write all questions, options, and explanations in Kannada (kn-IN).' : '');
+    return this._generateQuiz(prompt, sys);
   }
   
-  async getCurrentAffairs(query: CurrentAffairsQuery): Promise<{ summary: string; sources: GroundingChunk[] }> {
+  async getCurrentAffairs(query: CurrentAffairsQuery, lang: 'en' | 'kn' = 'en'): Promise<{ summary: string; sources: GroundingChunk[] }> {
     const prompt = `
             Provide a comprehensive summary of current affairs relevant to ALL GOV examinations based on the following criteria:
             - Date: ${query.date}
@@ -137,6 +142,7 @@ class GeminiService {
         model: "gemini-2.5-flash",
         contents: prompt,
         config: {
+            systemInstruction: `You are an expert ALL GOV current affairs summarizer. ${BEAUTIFUL_OUTPUT_INSTRUCTION}` + (lang === 'kn' ? '\nIMPORTANT: Respond in Kannada (kn-IN) language.' : ''),
             tools: [{ googleSearch: {} }],
         },
     });

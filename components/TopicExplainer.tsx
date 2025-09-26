@@ -11,6 +11,7 @@ import { CloseIcon } from './icons/CloseIcon';
 import Marquee from './common/Marquee';
 import MarkdownRenderer from './common/MarkdownRenderer';
 import { useAuth } from '../contexts/AuthContext';
+import { useI18n } from '../contexts/I18nContext';
 import { supabase } from '../services/supabaseClient';
 
 const SESSIONS_KEY = 'easyway-tutor-topic-explainer-sessions';
@@ -79,6 +80,7 @@ const TopicExplainer: React.FC = () => {
   }, [activeSession]);
   
   const geminiService = useMemo(() => new GeminiService(), []);
+  const { lang, t } = useI18n();
 
   // Prefill topic from Dashboard CTA
   useEffect(() => {
@@ -131,7 +133,7 @@ const TopicExplainer: React.FC = () => {
     setError(null);
 
     try {
-      const result = await geminiService.explainTopic(topic, config);
+      const result = await geminiService.explainTopic(topic, config, lang);
       const newSession: TopicExplainerSession = {
         id: `session-${Date.now()}`,
         topic,
@@ -147,7 +149,7 @@ const TopicExplainer: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [geminiService, topic, config, setSessions]);
+  }, [geminiService, topic, config, setSessions, lang]);
 
   const handleHistoryClick = (session: TopicExplainerSession) => {
     setTopic(session.topic);
@@ -167,7 +169,7 @@ const TopicExplainer: React.FC = () => {
 
   const renderPanelContent = () => {
     if (isLoading) {
-      return <div><div className="flex justify-center items-center gap-3"><LoadingSpinner /><p>Generating explanation for "{topic}"...</p></div></div>;
+      return <div><div className="flex justify-center items-center gap-3"><LoadingSpinner /><p>{t('generating_explainer').replace('{0}', topic)}</p></div></div>;
     }
     if (error) {
        return <div><p className="text-red-400 text-center">{error}</p></div>;
@@ -178,11 +180,11 @@ const TopicExplainer: React.FC = () => {
     if (topicToConfirm) {
         return (
             <div>
-                <h3 className="text-xl font-semibold text-center mb-4">Confirm Topic</h3>
-                <p className="text-center text-[rgb(var(--color-text-secondary))] mb-6">Generate an explanation for "{topicToConfirm}"?</p>
+                <h3 className="text-xl font-semibold text-center mb-4">{t('confirm_topic_title')}</h3>
+                <p className="text-center text-[rgb(var(--color-text-secondary))] mb-6">{t('confirm_topic_desc').replace('{0}', topicToConfirm)}</p>
                 <div className="flex justify-center gap-4">
-                    <button onClick={() => setTopicToConfirm(null)} className="px-6 py-2 bg-[rgb(var(--color-input))] rounded-lg hover:bg-slate-700">Cancel</button>
-                    <button onClick={handleConfirm} className="px-6 py-2 bg-[rgb(var(--color-primary))] text-white rounded-lg hover:bg-[rgb(var(--color-primary-hover))]">Confirm</button>
+                    <button onClick={() => setTopicToConfirm(null)} className="px-6 py-2 bg-[rgb(var(--color-input))] rounded-lg hover:bg-slate-700">{t('cancel')}</button>
+                    <button onClick={handleConfirm} className="px-6 py-2 bg-[rgb(var(--color-primary))] text-white rounded-lg hover:bg-[rgb(var(--color-primary-hover))]">{t('confirm')}</button>
                 </div>
             </div>
         );
@@ -191,28 +193,28 @@ const TopicExplainer: React.FC = () => {
         const formInputStyle = "w-full bg-[rgb(var(--color-input))] border border-[rgb(var(--color-border))] rounded-lg p-2 text-[rgb(var(--color-text-primary))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--color-background-start))] focus-visible:ring-[rgb(var(--color-primary))]";
         return (
             <div>
-                <h3 className="text-xl font-semibold mb-2">Refine Explanation</h3>
-                <p className="text-sm text-[rgb(var(--color-text-secondary))] mb-6">Topic: <span className="font-bold text-slate-300">{topic}</span></p>
+                <h3 className="text-xl font-semibold mb-2">{t('refine_explanation')}</h3>
+                <p className="text-sm text-[rgb(var(--color-text-secondary))] mb-6">{t('topic_label')}: <span className="font-bold text-slate-300">{topic}</span></p>
                 <div className="space-y-4">
                     <div>
-                        <label className="block text-sm font-medium text-[rgb(var(--color-text-secondary))] mb-1">Depth</label>
+                        <label className="block text-sm font-medium text-[rgb(var(--color-text-secondary))] mb-1">{t('depth')}</label>
                         <select value={config.depth} onChange={e => setConfig(c => ({...c, depth: e.target.value as TopicExplainerConfig['depth']}))} className={formInputStyle}>
                             <option>Beginner</option><option>Intermediate</option><option>Expert</option>
                         </select>
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-[rgb(var(--color-text-secondary))] mb-1">Format</label>
+                        <label className="block text-sm font-medium text-[rgb(var(--color-text-secondary))] mb-1">{t('format')}</label>
                         <select value={config.format} onChange={e => setConfig(c => ({...c, format: e.target.value as TopicExplainerConfig['format']}))} className={formInputStyle}>
                             <option>Detailed Paragraphs</option><option>Bullet Points</option><option>Q&A Format</option>
                         </select>
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-[rgb(var(--color-text-secondary))] mb-1">Specific Focus (optional)</label>
-                        <input type="text" value={config.focus} onChange={e => setConfig(c => ({...c, focus: e.target.value}))} placeholder="e.g., Economic Impact, Constitutional Articles" className={formInputStyle} />
+                        <label className="block text-sm font-medium text-[rgb(var(--color-text-secondary))] mb-1">{t('specific_focus_optional')}</label>
+                        <input type="text" value={config.focus} onChange={e => setConfig(c => ({...c, focus: e.target.value}))} placeholder={t('specific_focus_placeholder')} className={formInputStyle} />
                     </div>
                     <div className="flex justify-end gap-4 pt-2">
-                        <button onClick={() => setIsFormVisible(false)} className="px-6 py-2 bg-[rgb(var(--color-input))] rounded-lg hover:bg-slate-700">Cancel</button>
-                        <button onClick={handleGenerate} className="px-6 py-2 bg-[rgb(var(--color-primary))] text-white rounded-lg hover:bg-[rgb(var(--color-primary-hover))]">Generate</button>
+                        <button onClick={() => setIsFormVisible(false)} className="px-6 py-2 bg-[rgb(var(--color-input))] rounded-lg hover:bg-slate-700">{t('cancel')}</button>
+                        <button onClick={handleGenerate} className="px-6 py-2 bg-[rgb(var(--color-primary))] text-white rounded-lg hover:bg-[rgb(var(--color-primary-hover))]">{t('generate')}</button>
                     </div>
                 </div>
             </div>
@@ -244,8 +246,8 @@ const TopicExplainer: React.FC = () => {
         transition={{ duration: 0.5 }}
         className="relative z-20 w-full max-w-3xl px-4 text-center"
       >
-        <h1 className="text-3xl font-bold mb-1">Topic Explainer</h1>
-        <p className="text-base text-[rgb(var(--color-text-secondary))] mb-6">Dive deep into any ALL GOV topic.</p>
+        <h1 className="text-3xl font-bold mb-1">{t('topic_explainer')}</h1>
+        <p className="text-base text-[rgb(var(--color-text-secondary))] mb-6">{t('dive_deep')}</p>
         <div className="flex items-center gap-2">
             <input
                 type="text"
@@ -261,7 +263,7 @@ const TopicExplainer: React.FC = () => {
                 disabled={isLoading || topic.trim() === '' || isFormVisible || !!topicToConfirm}
                 className="px-4 py-2.5 bg-[rgb(var(--color-primary))] text-white font-semibold rounded-lg hover:bg-[rgb(var(--color-primary-hover))] disabled:bg-slate-600 disabled:cursor-not-allowed text-base"
             >
-                Explain
+                {t('explain')}
             </button>
         </div>
       </motion.div>
@@ -288,7 +290,7 @@ const TopicExplainer: React.FC = () => {
       <button 
         onClick={() => setIsHistoryVisible(true)}
         className="absolute top-6 right-6 z-30 p-3 rounded-full bg-[rgb(var(--color-card))]/50 hover:bg-[rgb(var(--color-card))] transition-colors"
-        aria-label="View History"
+        aria-label={t('view_history')}
       >
         <HistoryIcon />
       </button>
@@ -304,7 +306,7 @@ const TopicExplainer: React.FC = () => {
                 className="absolute top-0 right-0 bottom-0 w-full max-w-md bg-[rgb(var(--color-sidebar))] z-50 border-l border-[rgb(var(--color-border))] shadow-2xl flex flex-col"
             >
                 <div className="flex justify-between items-center p-4 border-b border-[rgb(var(--color-border))] flex-shrink-0">
-                    <h2 className="text-xl font-bold">History</h2>
+                    <h2 className="text-xl font-bold">{t('history')}</h2>
                     <button onClick={() => setIsHistoryVisible(false)} className="p-2 rounded-full hover:bg-[rgb(var(--color-input))]">
                         <CloseIcon />
                     </button>
@@ -318,7 +320,7 @@ const TopicExplainer: React.FC = () => {
                     )) : (
                         <div className="text-center text-sm text-[rgb(var(--color-text-secondary))] pt-8">
                             <BookIcon className="w-8 h-8 mx-auto mb-2" />
-                            <p>No history yet.</p>
+                            <p>{t('no_history_yet')}</p>
                         </div>
                     )}
                 </div>
@@ -332,19 +334,19 @@ const TopicExplainer: React.FC = () => {
           <div className={`${isFullscreen ? 'fixed inset-0 z-40 p-4 md:p-8' : ''}`}>
             <div className={`p-4 rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))]/70 backdrop-blur ${isFullscreen ? 'h-full max-h-none shadow-2xl' : ''}`}>
               <div className={`sticky top-0 z-10 -mx-4 px-4 py-2.5 mb-2 flex items-center justify-between border-b border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))]/80 backdrop-blur rounded-t-xl`}>
-                <h3 className="text-base font-semibold">Result</h3>
+                <h3 className="text-base font-semibold">{t('result')}</h3>
                 <div className="flex items-center gap-2">
                   {activeSession && (
                     <>
-                      <button onClick={handleCopy} className="px-3 py-1.5 text-xs rounded-md bg-[rgb(var(--color-input))] hover:bg-slate-600">Copy</button>
-                      <button onClick={handleExportMarkdown} className="px-3 py-1.5 text-xs rounded-md bg-[rgb(var(--color-input))] hover:bg-slate-600">Export MD</button>
-                      <button onClick={handleSaveToNotes} className="px-3 py-1.5 text-xs rounded-md bg-[rgb(var(--color-primary))] text-white">Save to Notes</button>
+                      <button onClick={handleCopy} className="px-3 py-1.5 text-xs rounded-md bg-[rgb(var(--color-input))] hover:bg-slate-600">{t('copy')}</button>
+                      <button onClick={handleExportMarkdown} className="px-3 py-1.5 text-xs rounded-md bg-[rgb(var(--color-input))] hover:bg-slate-600">{t('export_md')}</button>
+                      <button onClick={handleSaveToNotes} className="px-3 py-1.5 text-xs rounded-md bg-[rgb(var(--color-primary))] text-white">{t('save_to_notes')}</button>
                     </>
                   )}
                   <button onClick={() => setIsFullscreen(f => !f)} className="px-3 py-1.5 text-xs rounded-md bg-[rgb(var(--color-input))]">
-                    {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                    {isFullscreen ? t('exit_fullscreen') : t('fullscreen')}
                   </button>
-                  <button onClick={closeOutputPanel} className="px-3 py-1.5 text-xs rounded-md bg-[rgb(var(--color-input))]">Close</button>
+                  <button onClick={closeOutputPanel} className="px-3 py-1.5 text-xs rounded-md bg-[rgb(var(--color-input))]">{t('close')}</button>
                 </div>
               </div>
               <div
@@ -386,7 +388,7 @@ const TopicExplainer: React.FC = () => {
                 if (el) el.scrollTo({ top: 0, behavior: 'smooth' });
               }}
             >
-              ↑ Top
+              ↑ {t('top')}
             </motion.button>
           )}
           {showScrollDown && (
@@ -402,7 +404,7 @@ const TopicExplainer: React.FC = () => {
                 if (el) el.scrollBy({ top: 300, behavior: 'smooth' });
               }}
             >
-              ↓ More
+              ↓ {t('more')}
             </motion.button>
           )}
         </div>
