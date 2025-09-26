@@ -75,6 +75,7 @@ const CompetitiveView: React.FC = () => {
   const last30AlertedRef = useRef(false);
   const STORAGE_KEY = 'competitive_exam_session_v1';
   const EXAM_STYLE_ID = 'exam-mode-style';
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
   const enableExamMode = useCallback(() => {
     try {
@@ -258,6 +259,8 @@ const CompetitiveView: React.FC = () => {
           setIsFullscreen(true);
         }
       } catch {}
+      // Initialize audio (must be after a user gesture)
+      initAudio();
     } catch (e: any) {
       setError(e.message || 'Failed to load quiz');
     } finally {
@@ -280,6 +283,7 @@ const CompetitiveView: React.FC = () => {
         last30AlertedRef.current = true;
         setToast('Only 30 seconds left!');
         setTimeout(() => setToast(null), 3000);
+        playBeep();
       }
       // Persist answers + remaining time frequently
       try {
